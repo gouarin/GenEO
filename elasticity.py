@@ -73,15 +73,25 @@ def bcApplyEast(da, A, B):
 
 def buildElasticityMatrix(da, h, lamb, mu):
     Melem = getMatElemElasticity()
-    Melem = Melem.subs([('hx', h[0]), ('hy', h[1]), ('lambda', lamb), ('mu', mu)])
-    Melem = np.array(Melem).astype(np.float64)
+    if not isinstance(lamb, np.ndarray):
+        Melem_num = Melem.subs([('hx', h[0]), ('hy', h[1]), ('lambda', lamb), ('mu', mu)])
+        Melem_num = np.array(Melem_num).astype(np.float64)
+    else:
+        Melem = Melem.subs([('hx', h[0]), ('hy', h[1])])
 
     A = da.createMatrix()
     elem = da.getElements()
 
+    ie = 0
     for e in elem:
         ind = getIndices(e)
-        A.setValuesLocal(ind, ind, Melem, PETSc.InsertMode.ADD_VALUES)
+
+        if isinstance(lamb, np.ndarray):
+            Melem_num = Melem.subs([('lambda', lamb[ie]), ('mu', mu[ie])])
+            Melem_num = np.array(Melem_num).astype(np.float64)
+
+        A.setValuesLocal(ind, ind, Melem_num, PETSc.InsertMode.ADD_VALUES)
+        ie += 1
 
     return A
 
@@ -100,29 +110,43 @@ def buildMassMatrix(da, h):
 
     return A
 
-def f(coords, rhs):
-    x, y = coords
-    if x > 9.8:
-        rhs[0] = 0
-        rhs[1] = -10
-
 def buildRHS(da, h, apply_func):
     b = da.createGlobalVec()
-    TMP = da.createGlobalVec()
-    tmp = da.getVecArray(TMP)
-
     A = buildMassMatrix(da, h)
+    A.assemble()
+    tmp = buildVecWithFunction(da, apply_func)
+    A.mult(tmp, b)
+    #b.scale(-1) # Not sure that we have to do that
+    return b
+
+def buildVecWithFunction(da, func, extra_args=()):
+    OUT = da.createGlobalVec()
+    out = da.getVecArray(OUT)
 
     coords = da.getVecArray(da.getCoordinates())
     (xs, xe), (ys, ye) = da.getRanges()
     for i in range(xs, xe):
         for j in range(ys, ye):
             x, y = coords[i, j]
-            apply_func(coords[i, j], tmp[i, j])
-    A.assemble()
-    A.mult(TMP, b)
-    #b.scale(-1) # Not sure that we have to do that
-    return b
+            func(coords[i, j], out[i, j], *extra_args)
+
+    return OUT
+
+def buildCellArrayWithFunction(da, func, extra_args=()):
+    elem = da.getElements()
+    coords = da.getCoordinates()
+    
+    output = np.empty(elem.shape[0])
+    
+    ind = 0
+    for e in elem:
+        # Compute the middle point of a cell
+        x = .5*(coords[2*e[0]] + coords[2*e[1]])
+        y = .5*(coords[2*e[0]+1] + coords[2*e[3]+1])
+        output[ind] = func(x, y, *extra_args)
+        ind += 1
+
+    return output
 
 OptDB = PETSc.Options()
 
@@ -133,17 +157,35 @@ ny = OptDB.getInt('ny', Ly*n)
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
 
-# young modulus
-E = 30000
-# Poisson coefficient
-nu = 0.4
-lamb = (nu*E)/((1+nu)*(1-2*nu)) 
-mu = .5*E/(1+nu)
-
 da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly)
 
+# constant young modulus
+E = 30000
+# constant Poisson coefficient
+nu = 0.4
+
+# def g(x, y, v1, v2):
+#     if .4<=y<=.6:
+#         return v1
+#     else:
+#         return v2
+
+# # variable young modulus
+# E = buildCellArrayWithFunction(da, g, (100000, 30000))
+# # variable Poisson coefficient
+# nu = buildCellArrayWithFunction(da, g, (0.1, 0.4))
+
+lamb = (nu*E)/((1+nu)*(1-2*nu)) 
+mu = .5*E/(1+nu)
+
 x = da.createGlobalVec()
+
+def f(coords, rhs):
+    x, y = coords
+    if x > 9.8:
+        rhs[0] = 0
+        rhs[1] = -10
 
 b = buildRHS(da, [hx, hy], f)
 #b = da.createGlobalVec()
@@ -164,4 +206,3 @@ ksp.solve(b, x)
 
 viewer = PETSc.Viewer().createVTK('solution.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)
-
