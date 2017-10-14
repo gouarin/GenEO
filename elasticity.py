@@ -9,17 +9,17 @@ from six.moves import range
 
 from matelem import getMatElemElasticity, getMatElemMass
 
-def getIndices(elem):
-    ind = np.empty(2*elem.size, dtype=np.int32)
-    ind[::2] = 2*elem
-    ind[1::2] = 2*elem + 1
+def getIndices(elem, dof):
+    ind = np.empty(dof*elem.size, dtype=np.int32)
+    for i in range(dof):
+        ind[i::dof] = dof*elem + i
     return ind
 
 def bcApplyWest(da, A, b):
-    sizes = da.getSizes()
+    dim = da.getDim()
     dof = da.getDof()
     ranges = da.getGhostRanges()
-    sizes = np.empty(2, dtype=np.int32)
+    sizes = np.empty(dim, dtype=np.int32)
     for ir, r in enumerate(ranges):
         sizes[ir] = r[1] - r[0]
 
@@ -27,10 +27,16 @@ def bcApplyWest(da, A, b):
     values = np.empty(0)
 
     if ranges[0][0] == 0:
-        rows = np.empty(2*sizes[1], dtype=np.int32)
-        rows[::2] = dof*np.arange(sizes[1])*sizes[0]
-        rows[1::2] = rows[::2] + 1
-        values = np.zeros(2*sizes[1])
+        if dim == 2:
+            rows = np.empty(dim*sizes[1], dtype=np.int32)
+            rows[::dof] = dof*np.arange(sizes[1])*sizes[0]
+        else:
+            rows = np.empty(dim*sizes[1]*sizes[2], dtype=np.int32)
+            y = np.arange(sizes[1])
+            z = np.arange(sizes[2])*sizes[1]
+            rows[::dof] = dof*sizes[0]*(y + z[:, np.newaxis]).flatten()
+        for i in range(1, dof):
+            rows[i::dof] = rows[::dof] + i
 
     A.zeroRowsLocal(rows)
 
@@ -72,15 +78,20 @@ def bcApplyEast(da, A, B):
             b[xe-1, i, 1] = -1
 
 def buildElasticityMatrix(da, h, lamb, mu):
-    Melem = getMatElemElasticity()
-    Melem = Melem(h[0], h[1], lamb, mu)
+    Melem = getMatElemElasticity(da.getDim())
+
+    if da.getDim() == 2:
+        Melem = Melem(h[0], h[1], 0, lamb, mu)
+    else:
+        Melem = Melem(h[0], h[1], h[2], lamb, mu)
 
     A = da.createMatrix()
     elem = da.getElements()
 
     ie = 0
+    dof = da.getDof()
     for e in elem:
-        ind = getIndices(e)
+        ind = getIndices(e, dof)
 
         if isinstance(lamb, np.ndarray):
             Melem_num = Melem[..., ie]
@@ -93,16 +104,21 @@ def buildElasticityMatrix(da, h, lamb, mu):
     return A
 
 def buildMassMatrix(da, h):
-    Melem = getMatElemMass()
-    Melem = Melem(h[0], h[1])
+    Melem = getMatElemMass(da.getDim())
+
+    if da.getDim() == 2:
+        Melem = Melem(h[0], h[1], 0)
+    else:
+        Melem = Melem(h[0], h[1], h[2])
 
     A = da.createMatrix()
     elem = da.getElements()
 
+    dof = da.getDof()
     for e in elem:
-        ind = 2*e
-        A.setValuesLocal(ind, ind, Melem, PETSc.InsertMode.ADD_VALUES)
-        A.setValuesLocal(ind+1, ind+1, Melem, PETSc.InsertMode.ADD_VALUES)
+        ind = dof*e
+        for i in range(dof):
+            A.setValuesLocal(ind+i, ind+i, Melem, PETSc.InsertMode.ADD_VALUES)
 
     return A
 
@@ -112,7 +128,6 @@ def buildRHS(da, h, apply_func):
     A.assemble()
     tmp = buildVecWithFunction(da, apply_func)
     A.mult(tmp, b)
-    #b.scale(-1) # Not sure that we have to do that
     return b
 
 def buildVecWithFunction(da, func, extra_args=()):
@@ -120,36 +135,53 @@ def buildVecWithFunction(da, func, extra_args=()):
     out = da.getVecArray(OUT)
 
     coords = da.getVecArray(da.getCoordinates())
-    (xs, xe), (ys, ye) = da.getRanges()
-    func(coords[xs:xe, ys:ye], out[xs:xe, ys:ye], *extra_args)
+    if da.getDim() == 2:
+        (xs, xe), (ys, ye) = da.getRanges()
+        func(coords[xs:xe, ys:ye], out[xs:xe, ys:ye], *extra_args)
+    else:
+        (xs, xe), (ys, ye), (zs, ze) = da.getRanges()
+        func(coords[xs:xe, ys:ye, zs:ze], out[xs:xe, ys:ye, zs:ze], *extra_args)
 
     return OUT
 
 def buildCellArrayWithFunction(da, func, extra_args=()):
     elem = da.getElements()
     coords = da.getCoordinatesLocal()
+    dof = da.getDof()
 
-    x = .5*(coords[2*elem[:, 0]] + coords[2*elem[:, 1]])
-    y = .5*(coords[2*elem[:, 0] + 1] + coords[2*elem[:, 3] + 1])
+    x = .5*(coords[dof*elem[:, 0]] + coords[dof*elem[:, 1]])
+    y = .5*(coords[dof*elem[:, 0] + 1] + coords[dof*elem[:, 3] + 1])
 
-    return func(x, y, *extra_args)
+    if da.getDim() == 2:
+        return func(x, y, *extra_args)
+    else:
+        z= .5*(coords[dof*elem[:, 0] + 2] + coords[dof*elem[:, 4] + 2])
+        return func(x, y, z, *extra_args)
 
 OptDB = PETSc.Options()
 
-Lx, Ly = 10, 1
+Lx = OptDB.getInt('Lx', 10)
+Ly = OptDB.getInt('Ly', 1)
+Lz = OptDB.getInt('Lz', 0)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n)
 ny = OptDB.getInt('ny', Ly*n)
+nz = OptDB.getInt('nz', Lz*n)
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
+hz = Lz/(nz - 1)
 
-da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
-da.setUniformCoordinates(xmax=Lx, ymax=Ly)
+if Lz == 0:
+    da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
+else:
+    da = PETSc.DMDA().create([nx, ny, nz], dof=3, stencil_width=1)
 
-# # constant young modulus
-# E = 30000
-# # constant Poisson coefficient
-# nu = 0.4
+da.setUniformCoordinates(xmax=Lx, ymax=Ly, zmax=Lz)
+
+# constant young modulus
+E = 30000
+# constant Poisson coefficient
+nu = 0.4
 
 def g(x, y, v1, v2):
     output = np.empty(x.shape)
@@ -160,13 +192,13 @@ def g(x, y, v1, v2):
 
 
 import time
-t1 = time.time()
-# non constant young modulus
-E = buildCellArrayWithFunction(da, g, (100000, 30000))
-# non constant Poisson coefficient
-nu = buildCellArrayWithFunction(da, g, (0.4, 0.4))
-t2 = time.time()
-print("build E and nu", t2-t1)
+# t1 = time.time()
+# # non constant young modulus
+# E = buildCellArrayWithFunction(da, g, (100000, 30000))
+# # non constant Poisson coefficient
+# nu = buildCellArrayWithFunction(da, g, (0.4, 0.4))
+# t2 = time.time()
+# print("build E and nu", t2-t1)
 
 lamb = (nu*E)/((1+nu)*(1-2*nu)) 
 mu = .5*E/(1+nu)
@@ -180,13 +212,13 @@ def f(coords, rhs):
     rhs[mask, 1] = -10
 
 t1 = time.time()
-b = buildRHS(da, [hx, hy], f)
+b = buildRHS(da, [hx, hy, hz], f)
 t2 = time.time()
 print("build RHS", t2-t1)
 #b = da.createGlobalVec()
 
 t1 = time.time()
-A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
+A = buildElasticityMatrix(da, [hx, hy, hz], lamb, mu)
 t2 = time.time()
 print("assembling", t2-t1)  
 A.assemble()
