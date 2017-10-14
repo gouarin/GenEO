@@ -73,11 +73,7 @@ def bcApplyEast(da, A, B):
 
 def buildElasticityMatrix(da, h, lamb, mu):
     Melem = getMatElemElasticity()
-    if not isinstance(lamb, np.ndarray):
-        Melem_num = Melem.subs([('hx', h[0]), ('hy', h[1]), ('lambda', lamb), ('mu', mu)])
-        Melem_num = np.array(Melem_num).astype(np.float64)
-    else:
-        Melem = Melem.subs([('hx', h[0]), ('hy', h[1])])
+    Melem = Melem(h[0], h[1], lamb, mu)
 
     A = da.createMatrix()
     elem = da.getElements()
@@ -87,8 +83,9 @@ def buildElasticityMatrix(da, h, lamb, mu):
         ind = getIndices(e)
 
         if isinstance(lamb, np.ndarray):
-            Melem_num = Melem.subs([('lambda', lamb[ie]), ('mu', mu[ie])])
-            Melem_num = np.array(Melem_num).astype(np.float64)
+            Melem_num = Melem[..., ie]
+        else:
+            Melem_num = Melem
 
         A.setValuesLocal(ind, ind, Melem_num, PETSc.InsertMode.ADD_VALUES)
         ie += 1
@@ -97,8 +94,7 @@ def buildElasticityMatrix(da, h, lamb, mu):
 
 def buildMassMatrix(da, h):
     Melem = getMatElemMass()
-    Melem = Melem.subs([('hx', h[0]), ('hy', h[1])])
-    Melem = np.array(Melem).astype(np.float64)
+    Melem = Melem(h[0], h[1])
 
     A = da.createMatrix()
     elem = da.getElements()
@@ -160,21 +156,21 @@ hy = Ly/(ny - 1)
 da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly)
 
-# constant young modulus
-E = 30000
-# constant Poisson coefficient
-nu = 0.4
+# # constant young modulus
+# E = 30000
+# # constant Poisson coefficient
+# nu = 0.4
 
-# def g(x, y, v1, v2):
-#     if .4<=y<=.6:
-#         return v1
-#     else:
-#         return v2
+def g(x, y, v1, v2):
+    if .4<=y<=.6:
+        return v1
+    else:
+        return v2
 
-# # variable young modulus
-# E = buildCellArrayWithFunction(da, g, (100000, 30000))
-# # variable Poisson coefficient
-# nu = buildCellArrayWithFunction(da, g, (0.1, 0.4))
+# non constant young modulus
+E = buildCellArrayWithFunction(da, g, (100000, 30000))
+# non constant Poisson coefficient
+nu = buildCellArrayWithFunction(da, g, (0.4, 0.4))
 
 lamb = (nu*E)/((1+nu)*(1-2*nu)) 
 mu = .5*E/(1+nu)
@@ -189,7 +185,12 @@ def f(coords, rhs):
 
 b = buildRHS(da, [hx, hy], f)
 #b = da.createGlobalVec()
+
+import time
+t1 = time.time()
 A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
+t2 = time.time()
+print("assembling", t2-t1)  
 A.assemble()
 
 bcApplyWest(da, A, b)

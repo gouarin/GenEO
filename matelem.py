@@ -30,7 +30,7 @@ def getMatElemElasticity():
             output[i, j] = sympy.integrate(A[i, j], (y, 0., hy), (x, 0., hx)).expand()
             output[i, j].simplify()
 
-    return output
+    return sympy.lambdify((hx, hy, lamb, mu), output, "numpy")
 
 def getMatElemMass():
     output = sympy.zeros(4, 4)
@@ -39,5 +39,5 @@ def getMatElemMass():
             output[i, j] = sympy.integrate(phi[i]*phi[j], (y, 0., hy), (x, 0., hx)).expand()
             output[i, j].simplify()
 
-    return output
+    return sympy.lambdify((hx, hy), output, "numpy")
 
