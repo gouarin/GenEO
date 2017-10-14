@@ -1,15 +1,15 @@
 import sympy
 from sympy import Rational as rat
 
+x, y, hx, hy = sympy.symbols('x, y, hx, hy')
+lamb, mu = sympy.symbols('lambda, mu')
+
+phi = [ rat(1.)/(hx*hy)*(x - hx)*(y - hy),
+        -rat(1.)/(hx*hy)*x*(y - hy),
+        rat(1.)/(hx*hy)*x*y,
+        -rat(1.)/(hx*hy)*(x - hx)*y]
+
 def getMatElemElasticity():
-    x, y, hx, hy = sympy.symbols('x,y,hx,hy')
-    lamb, mu, tmp = sympy.symbols('lambda, mu, tmp')
-
-    phi = [ rat(1.)/(hx*hy)*(x - hx)*(y - hy),
-           -rat(1.)/(hx*hy)*x*(y - hy),
-            rat(1.)/(hx*hy)*x*y,
-           -rat(1.)/(hx*hy)*(x - hx)*y]
-
     C = sympy.Matrix([[lamb + 2*mu,        lamb,  0],
                       [       lamb, lamb + 2*mu,  0],
                       [          0,           0, mu]])
@@ -31,3 +31,13 @@ def getMatElemElasticity():
             output[i, j].simplify()
 
     return output
+
+def getMatElemMass():
+    output = sympy.zeros(4, 4)
+    for i in range(4):
+        for j in range(4):
+            output[i, j] = sympy.integrate(phi[i]*phi[j], (y, 0., hy), (x, 0., hx)).expand()
+            output[i, j].simplify()
+
+    return output
+

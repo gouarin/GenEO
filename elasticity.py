@@ -7,7 +7,7 @@ from petsc4py import PETSc
 import sympy
 from six.moves import range
 
-from matelem import getMatElemElasticity
+from matelem import getMatElemElasticity, getMatElemMass
 
 def getIndices(elem):
     ind = np.empty(2*elem.size, dtype=np.int32)
@@ -85,6 +85,45 @@ def buildElasticityMatrix(da, h, lamb, mu):
 
     return A
 
+def buildMassMatrix(da, h):
+    Melem = getMatElemMass()
+    Melem = Melem.subs([('hx', h[0]), ('hy', h[1])])
+    Melem = np.array(Melem).astype(np.float64)
+
+    A = da.createMatrix()
+    elem = da.getElements()
+
+    for e in elem:
+        ind = 2*e
+        A.setValuesLocal(ind, ind, Melem, PETSc.InsertMode.ADD_VALUES)
+        A.setValuesLocal(ind+1, ind+1, Melem, PETSc.InsertMode.ADD_VALUES)
+
+    return A
+
+def f(coords, rhs):
+    x, y = coords
+    if x > 9.8:
+        rhs[0] = 0
+        rhs[1] = -10
+
+def buildRHS(da, h, apply_func):
+    b = da.createGlobalVec()
+    TMP = da.createGlobalVec()
+    tmp = da.getVecArray(TMP)
+
+    A = buildMassMatrix(da, h)
+
+    coords = da.getVecArray(da.getCoordinates())
+    (xs, xe), (ys, ye) = da.getRanges()
+    for i in range(xs, xe):
+        for j in range(ys, ye):
+            x, y = coords[i, j]
+            apply_func(coords[i, j], tmp[i, j])
+    A.assemble()
+    A.mult(TMP, b)
+    #b.scale(-1) # Not sure that we have to do that
+    return b
+
 OptDB = PETSc.Options()
 
 Lx, Ly = 10, 1
@@ -105,13 +144,14 @@ da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly)
 
 x = da.createGlobalVec()
-b = da.createGlobalVec()
 
+b = buildRHS(da, [hx, hy], f)
+#b = da.createGlobalVec()
 A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
 A.assemble()
 
 bcApplyWest(da, A, b)
-bcApplyEast(da, A, b)
+#bcApplyEast(da, A, b)
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
@@ -124,3 +164,4 @@ ksp.solve(b, x)
 
 viewer = PETSc.Viewer().createVTK('solution.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)
+
