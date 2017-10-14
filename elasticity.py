@@ -121,28 +121,18 @@ def buildVecWithFunction(da, func, extra_args=()):
 
     coords = da.getVecArray(da.getCoordinates())
     (xs, xe), (ys, ye) = da.getRanges()
-    for i in range(xs, xe):
-        for j in range(ys, ye):
-            x, y = coords[i, j]
-            func(coords[i, j], out[i, j], *extra_args)
+    func(coords[xs:xe, ys:ye], out[xs:xe, ys:ye], *extra_args)
 
     return OUT
 
 def buildCellArrayWithFunction(da, func, extra_args=()):
     elem = da.getElements()
-    coords = da.getCoordinates()
-    
-    output = np.empty(elem.shape[0])
-    
-    ind = 0
-    for e in elem:
-        # Compute the middle point of a cell
-        x = .5*(coords[2*e[0]] + coords[2*e[1]])
-        y = .5*(coords[2*e[0]+1] + coords[2*e[3]+1])
-        output[ind] = func(x, y, *extra_args)
-        ind += 1
+    coords = da.getCoordinatesLocal()
 
-    return output
+    x = .5*(coords[2*elem[:, 0]] + coords[2*elem[:, 1]])
+    y = .5*(coords[2*elem[:, 0] + 1] + coords[2*elem[:, 3] + 1])
+
+    return func(x, y, *extra_args)
 
 OptDB = PETSc.Options()
 
@@ -162,15 +152,21 @@ da.setUniformCoordinates(xmax=Lx, ymax=Ly)
 # nu = 0.4
 
 def g(x, y, v1, v2):
-    if .4<=y<=.6:
-        return v1
-    else:
-        return v2
+    output = np.empty(x.shape)
+    mask = np.logical_and(.4<=y, y<=.6)
+    output[mask] = v1
+    output[np.logical_not(mask)] = v2
+    return output
 
+
+import time
+t1 = time.time()
 # non constant young modulus
 E = buildCellArrayWithFunction(da, g, (100000, 30000))
 # non constant Poisson coefficient
 nu = buildCellArrayWithFunction(da, g, (0.4, 0.4))
+t2 = time.time()
+print("build E and nu", t2-t1)
 
 lamb = (nu*E)/((1+nu)*(1-2*nu)) 
 mu = .5*E/(1+nu)
@@ -178,15 +174,17 @@ mu = .5*E/(1+nu)
 x = da.createGlobalVec()
 
 def f(coords, rhs):
-    x, y = coords
-    if x > 9.8:
-        rhs[0] = 0
-        rhs[1] = -10
+    x = coords[..., 0]
+    mask = x > 9.8
+    rhs[mask, 0] = 0
+    rhs[mask, 1] = -10
 
+t1 = time.time()
 b = buildRHS(da, [hx, hy], f)
+t2 = time.time()
+print("build RHS", t2-t1)
 #b = da.createGlobalVec()
 
-import time
 t1 = time.time()
 A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
 t2 = time.time()
