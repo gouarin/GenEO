@@ -3,8 +3,8 @@ import numpy as np
 from six.moves import range
 from petsc4py import PETSc
 
-import matelem_cython
-from matelem import getMatElemMass
+from . import matelem_cython
+from .matelem import getMatElemMass
 
 def getMatElemElasticity(h, lamb, mu):
     """
