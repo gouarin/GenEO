@@ -7,15 +7,94 @@ from petsc4py import PETSc
 import sympy
 from six.moves import range
 
-from matelem import getMatElemElasticity, getMatElemMass
+import matelem_cython
+
+from matelem import getMatElemMass
+
+def getMatElemElasticity(h, lamb, mu):
+    """
+    return the elementary matrix of the elasticity operator
+    discretized using Q1 finite element (works in 2d and 3d)
+
+    Parameters
+    ==========
+
+    h : list
+        The space step in each direction.
+
+    lamb: double or ndarray 
+        Lame constant. If lamb is an array, the coefficients are 
+        the constant values of this lame constant on each cell.
+
+    mu: double or array 
+        Lame constant. If mu is an array, the coefficients are 
+        the constant values of this lame constant on each cell.
+
+    Returns
+    =======
+    out: ndarray
+        The elementary matrix of the elasticity operator.
+    """
+    dim = len(h)
+    if dim == 2:
+        hx, hy = h
+        if isinstance(lamb, np.ndarray):
+            return matelem_cython.getMatElemElasticity_2d_nonconst(hx, hy, lamb, mu)
+        else:
+            return matelem_cython.getMatElemElasticity_2d_const(hx, hy, lamb, mu)
+    elif dim == 3:
+        hx, hy, hz = h
+        if isinstance(lamb, np.ndarray):
+            return matelem_cython.getMatElemElasticity_3d_nonconst(hx, hy, hz, lamb, mu)
+        else:
+            return matelem_cython.getMatElemElasticity_3d_const(hx, hy, hz, lamb, mu)
 
 def getIndices(elem, dof):
+    """
+    Return matrix indices for each dof for a given element
+    using the PETSc numbering.
+
+    Parameters
+    ==========
+
+    elem : ndarray
+        The list of the mesh elements.
+    
+    dof : int
+        Number of dof (2 in 2d and 3 in 3d).
+
+    Returns
+    =======
+
+    ind : ndarray
+        The list of the entries in the matrix.
+    """
     ind = np.empty(dof*elem.size, dtype=np.int32)
     for i in range(dof):
         ind[i::dof] = dof*elem + i
     return ind
 
 def bcApplyWest(da, A, b):
+    """
+    Apply boundary conditions on the west side.
+
+    Parameters
+    ==========
+
+    da : petsc.DMDA
+        The mesh structure.
+    
+    A : petsc.Mat
+        The matrix of the elasticity operator.
+
+    b : petsc.Vec
+        The second member.
+    
+    This function sets all the row entries of the matrix A 
+    corresponding to the Dirichlet boundary to 0 and 1 on 
+    the diagonal and sets the Dirichlet condition on the 
+    second member b.
+    """
     dim = da.getDim()
     dof = da.getDof()
     ranges = da.getGhostRanges()
@@ -49,6 +128,26 @@ def bcApplyWest(da, A, b):
     #         b[xs, i, 1] = 0
 
 def bcApplyEast(da, A, B):
+    """
+    Apply boundary conditions on the east side.
+
+    Parameters
+    ==========
+
+    da : petsc.DMDA
+        The mesh structure.
+    
+    A : petsc.Mat
+        The matrix of the elasticity operator.
+
+    b : petsc.Vec
+        The second member.
+    
+    This function sets all the row entries of the matrix A 
+    corresponding to the Dirichlet boundary to 0 and 1 on 
+    the diagonal and sets the Dirichlet condition on the 
+    second member b.
+    """
     global_sizes = da.getSizes()
     dof = da.getDof()
     ranges = da.getGhostRanges()
@@ -78,13 +177,33 @@ def bcApplyEast(da, A, B):
             b[xe-1, i, 1] = -1
 
 def buildElasticityMatrix(da, h, lamb, mu):
-    Melem = getMatElemElasticity(da.getDim())
+    """
+    Assemble the matrix of the elasticity operator
+    using Q1 finite elements.
 
-    if da.getDim() == 2:
-        Melem = Melem(h[0], h[1], 0, lamb, mu)
-    else:
-        Melem = Melem(h[0], h[1], h[2], lamb, mu)
+    Parameters
+    ==========
 
+    da : petsc.DMDA
+        The mesh structure.
+
+    h : list
+        The space step in each direction.
+
+    lamb: double or ndarray 
+        Lame constant. If lamb is an array, the coefficients are 
+        the constant values of this lame constant on each cell.
+
+    mu: double or array 
+        Lame constant. If mu is an array, the coefficients are 
+        the constant values of this lame constant on each cell.
+
+    Returns
+    =======
+    A: petsc.Mat
+        The matrix of the elasticity operator.
+    """
+    Melem = getMatElemElasticity(h, lamb, mu)
     A = da.createMatrix()
     elem = da.getElements()
 
@@ -94,7 +213,7 @@ def buildElasticityMatrix(da, h, lamb, mu):
         ind = getIndices(e, dof)
 
         if isinstance(lamb, np.ndarray):
-            Melem_num = Melem[..., ie]
+            Melem_num = Melem[ie]
         else:
             Melem_num = Melem
 
@@ -104,6 +223,23 @@ def buildElasticityMatrix(da, h, lamb, mu):
     return A
 
 def buildMassMatrix(da, h):
+    """
+    Assemble the mass matrix using Q1 finite elements.
+
+    Parameters
+    ==========
+
+    da : petsc.DMDA
+        The mesh structure.
+
+    h : list
+        The space step in each direction.
+
+    Returns
+    =======
+    A: petsc.Mat
+        The mass matrix.
+    """    
     Melem = getMatElemMass(da.getDim())
 
     if da.getDim() == 2:
@@ -123,6 +259,27 @@ def buildMassMatrix(da, h):
     return A
 
 def buildRHS(da, h, apply_func):
+    """
+    Construct the second member of the elasticity problem.
+
+    Parameters
+    ==========
+
+    da : petsc.DMDA
+        The mesh structure.
+
+    h : list
+        The space step in each direction.
+
+    apply_func: function
+        Function corresponding to the f (rhs) in the 
+        elasticity problem.
+
+    Returns
+    =======
+    b: petsc.Vec
+        The second member.
+    """
     b = da.createGlobalVec()
     A = buildMassMatrix(da, h)
     A.assemble()
@@ -131,6 +288,27 @@ def buildRHS(da, h, apply_func):
     return b
 
 def buildVecWithFunction(da, func, extra_args=()):
+    """
+    Construct a vector using a function applied on
+    each point of the mesh.
+
+    Parameters
+    ==========
+
+    da : petsc.DMDA
+        The mesh structure.
+
+    func: function
+        Function to apply on each point.
+
+    extra_args: tuple
+        extra parameters of the function.
+
+    Returns
+    =======
+    b: petsc.Vec
+        The vector with the function values on each point.
+    """
     OUT = da.createGlobalVec()
     out = da.getVecArray(OUT)
 
@@ -145,6 +323,27 @@ def buildVecWithFunction(da, func, extra_args=()):
     return OUT
 
 def buildCellArrayWithFunction(da, func, extra_args=()):
+    """
+    Construct a vector using a function applied on
+    each cell of the mesh.
+
+    Parameters
+    ==========
+
+    da : petsc.DMDA
+        The mesh structure.
+
+    func: function
+        Function to apply on each cell.
+
+    extra_args: tuple
+        extra parameters of the function.
+
+    Returns
+    =======
+    b: petsc.Vec
+        The vector with the function values on each cell.
+    """
     elem = da.getElements()
     coords = da.getCoordinatesLocal()
     dof = da.getDof()
@@ -177,13 +376,15 @@ else:
     da = PETSc.DMDA().create([nx, ny, nz], dof=3, stencil_width=1)
 
 da.setUniformCoordinates(xmax=Lx, ymax=Ly, zmax=Lz)
+if mpi.COMM_WORLD.rank == 0:
+    print(da.getSizes())
 
-# constant young modulus
-E = 30000
-# constant Poisson coefficient
-nu = 0.4
+# # constant young modulus
+# E = 30000
+# # constant Poisson coefficient
+# nu = 0.4
 
-def g(x, y, v1, v2):
+def g(x, y, z, v1, v2):
     output = np.empty(x.shape)
     mask = np.logical_and(.4<=y, y<=.6)
     output[mask] = v1
@@ -192,13 +393,13 @@ def g(x, y, v1, v2):
 
 
 import time
-# t1 = time.time()
-# # non constant young modulus
-# E = buildCellArrayWithFunction(da, g, (100000, 30000))
-# # non constant Poisson coefficient
-# nu = buildCellArrayWithFunction(da, g, (0.4, 0.4))
-# t2 = time.time()
-# print("build E and nu", t2-t1)
+t1 = time.time()
+# non constant young modulus
+E = buildCellArrayWithFunction(da, g, (100000, 30000))
+# non constant Poisson coefficient
+nu = buildCellArrayWithFunction(da, g, (0.4, 0.4))
+t2 = time.time()
+print("build E and nu", t2-t1)
 
 lamb = (nu*E)/((1+nu)*(1-2*nu)) 
 mu = .5*E/(1+nu)
