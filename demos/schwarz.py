@@ -5,18 +5,12 @@ import mpi4py.MPI as mpi
 from petsc4py import PETSc
 from elasticity import *
 
-# def rhs(coords, rhs):
-#     x = coords[..., 0]
-#     mask = x > 9.8
-#     rhs[mask, 0] = 0
-#     rhs[mask, 1] = -10
-
 def rhs(coords, rhs):
-    rhs[..., 1] = -0.01
+    rhs[:, 1] = -9.81
 
 OptDB = PETSc.Options()
-Lx = OptDB.getReal('Lx', 10)
-Ly = OptDB.getReal('Ly', 1)
+Lx = OptDB.getInt('Lx', 10)
+Ly = OptDB.getInt('Ly', 1)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n)
 ny = OptDB.getInt('ny', Ly*n)
@@ -27,16 +21,13 @@ hy = Ly/(ny - 1)
 da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly)
 
-# # constant young modulus
-# E = 30000
-# # constant Poisson coefficient
-# nu = 0.4
+# constant young modulus
+E = 30000
+# constant Poisson coefficient
+nu = 0.4
 
-# lamb = (nu*E)/((1+nu)*(1-2*nu)) 
-# mu = .5*E/(1+nu)
-
-lamb = .25
-mu = 1
+lamb = (nu*E)/((1+nu)*(1-2*nu)) 
+mu = .5*E/(1+nu)
 
 x = da.createGlobalVec()
 b = buildRHS(da, [hx, hy], rhs)
@@ -45,11 +36,20 @@ A.assemble()
 
 bcApplyWest(da, A, b)
 
+asm = ASM(da, [hx, hy], lamb, mu)
+P = PETSc.Mat().createPython(
+    [x.getSizes(), b.getSizes()], comm=da.comm)
+P.setPythonContext(asm)
+P.setUp()
+
 ksp = PETSc.KSP().create()
-ksp.setOperators(A)
+ksp.setOperators(A, P)
+pc = ksp.pc
+pc.setType(pc.Type.PYTHON)
+pc.setPythonContext(PCASM())
 ksp.setFromOptions()
 
 ksp.solve(b, x)
 
-viewer = PETSc.Viewer().createVTK('solution_2d.vts', 'w', comm = PETSc.COMM_WORLD)
+viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)
