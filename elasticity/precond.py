@@ -6,7 +6,6 @@ import mpi4py.MPI as mpi
 import numpy as np
 
 class ASM(object):
-
     def __init__(self, da_global, D_global, vecs, Avecs, h, lamb, mu):
         self.da_global = da_global
         self.vecs = vecs
@@ -59,9 +58,10 @@ class ASM(object):
         self.ksp.setFromOptions()
 
         # Construct work arrays
-        self.work_global  = self.da_global.createLocalVec()
-        self.work1_local  = self.da_local.createGlobalVec()
-        self.work2_local  = self.da_local.createGlobalVec()
+        self.work_global = self.da_global.createLocalVec()
+        self.workg_global = self.da_global.createGlobalVec()
+        self.work1_local = self.da_local.createGlobalVec()
+        self.work2_local = self.da_local.createGlobalVec()
 
     def mult(self, mat, x, y):
         self.work_global.set(0.)
@@ -80,11 +80,11 @@ class ASM(object):
         work_global_a[self.block] = sol_a[:, :]
         self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
 
-        ptilde = self.da_global.createGlobalVec()
-        for i in range(len(self.vecs)):
-            ptilde += self.Avecs[i].dot(y)*self.vecs[i]
+        self.workg_global.set(0)
+        for vec, Avec in zip(self.vecs, self.Avecs):
+            self.workg_global += Avec.dot(y)*vec
         
-        y -= ptilde
+        y -= self.workg_global
 
 class PCASM(object):
     def setUp(self, pc):
