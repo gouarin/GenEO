@@ -9,50 +9,35 @@ from elasticity import *
 
 def get_nullspace(da, A):
     RBM = PETSc.NullSpace().createRigidBody(da.getCoordinates())
-    u, v, r = RBM.getVecs()
+    rbm_vecs = RBM.getVecs()
 
     (xs, xe), (ys, ye) = da.getRanges()
     (gxs, gxe), (gys, gye) = da.getGhostRanges()
 
+    # Restriction operator
     R = da.createGlobalVec()
-    D = da.createGlobalVec()
-    
     Rlocal = da.createLocalVec()
-    Dlocal = da.createLocalVec()
-
     Rlocal_a = da.getVecArray(Rlocal)
-    Rlocal_a[gxs: xe, gys:ye] = 1
-    
+    Rlocal_a[gxs:xe, gys:ye] = 1
+
+    # multiplicity
+    D = da.createGlobalVec()
+    Dlocal = da.createLocalVec()
     da.localToGlobal(Rlocal, D, addv=PETSc.InsertMode.ADD_VALUES)
     da.globalToLocal(D, Dlocal)
 
-    size = mpi.COMM_WORLD.size
-    rank = mpi.COMM_WORLD.rank
+    work1 = da.createLocalVec()
+    work2 = da.createLocalVec()
+
     vecs= []
-    for i in range(3*size):
-        vecs.append(da.createGlobalVec())
-
-    ulocal = da.createLocalVec()
-    vlocal = da.createLocalVec()
-
-    for i in range(size):
-        vlocal.set(0)
-        da.globalToLocal(u, ulocal)
-        if i == rank:
-            vlocal = ulocal*Rlocal/Dlocal
-        da.localToGlobal(vlocal, vecs[3*i], addv=PETSc.InsertMode.ADD_VALUES)
-
-        vlocal.set(0)
-        da.globalToLocal(v, ulocal)
-        if i == rank:
-            vlocal = ulocal*Rlocal/Dlocal
-        da.localToGlobal(vlocal, vecs[3*i+1], addv=PETSc.InsertMode.ADD_VALUES)
-
-        vlocal.set(0)
-        da.globalToLocal(r, ulocal)
-        if i == rank:
-            vlocal = ulocal*Rlocal/Dlocal
-        da.localToGlobal(vlocal, vecs[3*i+2], addv=PETSc.InsertMode.ADD_VALUES)
+    for i in range(mpi.COMM_WORLD.size):
+        for ivec, rbm_vec in enumerate(rbm_vecs):
+            vecs.append(da.createGlobalVec())
+            work1.set(0)
+            da.globalToLocal(rbm_vec, work2)
+            if i == mpi.COMM_WORLD.rank:
+                work1 = work2*Rlocal/Dlocal
+            da.localToGlobal(work1, vecs[-1], addv=PETSc.InsertMode.ADD_VALUES)
 
     # orthonormalize
     Avecs = []
@@ -74,7 +59,6 @@ def get_nullspace(da, A):
 
 def rhs(coords, rhs):
     rhs[..., 1] = -9.81
-    #rhs[..., 1] = -981
 
 OptDB = PETSc.Options()
 Lx = OptDB.getInt('Lx', 10)
@@ -103,8 +87,8 @@ A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
 A.assemble()
 
 bcApplyWest(da, A, b)
-#bcApplyEast(da, A, b)
 
+# build nullspace and multiplicity
 D, vecs, Avecs = get_nullspace(da, A)
 
 asm = ASM(da, D, vecs, Avecs, [hx, hy], lamb, mu)
@@ -113,54 +97,23 @@ P = PETSc.Mat().createPython(
 P.setPythonContext(asm)
 P.setUp()
 
-# ksp = PETSc.KSP().create()
-# ksp.setOperators(A)
-# ksp.setOptionsPrefix("elas_")
-# ksp.setType("cg")
-# pc = ksp.pc
-# pc.setType(None)
-# # pc.setType(pc.Type.PYTHON)
-# # pc.setPythonContext(PCASM())
-# ksp.setFromOptions()
-
-# ksp.solve(b, x)
-
-# viewer = PETSc.Viewer().createVTK('solution_2d_asm_ref.vts', 'w', comm = PETSc.COMM_WORLD)
-# x.view(viewer)
-
-
-# size = mpi.COMM_WORLD.size
-
-# for i in range(3*size):
-#     print(i, end=" ")
-#     for j in range(3*size):
-#         print(vecs[i].dot(Avecs[j]), end=" ")
-#     print()
-# nullspace = PETSc.NullSpace().create(vectors=vecs)
-# A.setNearNullSpace(nullspace)
-
-# nullspace.remove(b)
+# Set initial guess
 ptilde = da.createGlobalVec()
 for i in range(len(vecs)):
     ptilde += vecs[i].dot(b)*vecs[i]
-
 x = ptilde
 bcApplyWest_vec(da, x)
 
 ksp = PETSc.KSP().create()
-#ksp.setOperators(A)
 ksp.setOperators(A, P)
 ksp.setOptionsPrefix("elas_")
 ksp.setType("cg")
 ksp.setInitialGuessNonzero(True)
 pc = ksp.pc
-#pc.setType(None)
 pc.setType(pc.Type.PYTHON)
 pc.setPythonContext(PCASM())
 ksp.setFromOptions()
 
-# x[:] = np.random.random(x.size)
-# x.assemble()
 ksp.solve(b, x)
 
 viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
