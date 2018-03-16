@@ -1,6 +1,7 @@
 
 from .assembling import buildElasticityMatrix
 from .bc import bcApplyWestMat, bcApplyWest_vec
+from .cg import cg
 from petsc4py import PETSc
 import mpi4py.MPI as mpi
 import numpy as np
@@ -36,6 +37,8 @@ class ASM(object):
         if mpi.COMM_WORLD.rank == 0:
             bcApplyWestMat(self.da_local, A)
 
+        # bcApplyWestMat(self.da_local, A)
+
         self.nullspace = PETSc.NullSpace().createRigidBody(self.da_local.getCoordinates())
         u, v, r = self.nullspace.getVecs()
         u[:] /= D[:]
@@ -46,15 +49,24 @@ class ASM(object):
             bcApplyWest_vec(self.da_local, v)
             bcApplyWest_vec(self.da_local, r)
 
-        A.setNullSpace(self.nullspace)
+        # bcApplyWest_vec(self.da_local, u)
+        # bcApplyWest_vec(self.da_local, v)
+        # bcApplyWest_vec(self.da_local, r)
+
+        # if mpi.COMM_WORLD.rank != 0:
+        #     A.setNearNullSpace(self.nullspace)
+        #A.setNullSpace(self.nullspace)
+        self.A = A
 
         # build local solvers
         self.ksp = PETSc.KSP().create()
         self.ksp.setOperators(A)
         self.ksp.setOptionsPrefix("myasm_")
-        self.ksp.setType('cg')
+        self.ksp.setType('preonly')
+        # self.ksp.setType('cg')
         pc = self.ksp.getPC()
-        pc.setType('none')
+        # pc.setType('none')
+        pc.setType('lu')
         self.ksp.setFromOptions()
 
         # Construct work arrays
@@ -72,7 +84,10 @@ class ASM(object):
         work1_local_a = self.da_local.getVecArray(self.work1_local)
         work1_local_a[:, :] = work_global_a[self.block]
 
+        work2_local_a = self.da_local.getVecArray(self.work2_local)
         self.ksp.solve(self.work1_local, self.work2_local)
+
+        # self.work2_local = cg(self.A, self.work1_local)
 
         self.work_global.set(0.)
         sol_a = self.da_local.getVecArray(self.work2_local)
@@ -86,9 +101,19 @@ class ASM(object):
         
         y -= self.workg_global
 
+class PC_JACOBI(object):
+    def setUp(self, pc):
+        B, self.P = pc.getOperators()
+        self.diag = self.P.getDiagonal()
+
+    def apply(self, pc, x, y):
+        y.array = x/self.diag
+
+
 class PCASM(object):
     def setUp(self, pc):
         B, self.P = pc.getOperators()
 
     def apply(self, pc, x, y):
         y.array = self.P*x
+        # print('residual', mpi.COMM_WORLD.rank, x.dot(y), y.norm(), x.norm())

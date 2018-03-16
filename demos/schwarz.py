@@ -6,7 +6,6 @@ from petsc4py import PETSc
 import numpy as np
 from elasticity import *
 
-
 def get_nullspace(da, A):
     RBM = PETSc.NullSpace().createRigidBody(da.getCoordinates())
     rbm_vecs = RBM.getVecs()
@@ -58,7 +57,9 @@ def get_nullspace(da, A):
 
 
 def rhs(coords, rhs):
-    rhs[..., 1] = -9.81
+    n = rhs.shape
+    #rand = np.random.random(n[:-1])
+    rhs[..., 1] = -9.81# + rand
 
 OptDB = PETSc.Options()
 Lx = OptDB.getInt('Lx', 10)
@@ -101,20 +102,49 @@ P.setUp()
 ptilde = da.createGlobalVec()
 for i in range(len(vecs)):
     ptilde += vecs[i].dot(b)*vecs[i]
-x = ptilde
+x = ptilde.copy()
+xtild = ptilde.copy()
 bcApplyWest_vec(da, x)
+bcApplyWest_vec(da, xtild)
+
+bcopy = b.copy()
+
+b -= A*xtild
+
+from math import sqrt
+normb = sqrt(b.dot(P*b))
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A, P)
+# ksp.setOperators(A)
 ksp.setOptionsPrefix("elas_")
 ksp.setType("cg")
-ksp.setInitialGuessNonzero(True)
+#ksp.setInitialGuessNonzero(True)
+
 pc = ksp.pc
+# pc.setType('jacobi')
 pc.setType(pc.Type.PYTHON)
 pc.setPythonContext(PCASM())
+# pc.setPythonContext(PC_JACOBI())
 ksp.setFromOptions()
+ksp.setConvergenceHistory()
 
 ksp.solve(b, x)
 
+norm = (A*x-bcopy).norm()
+if mpi.COMM_WORLD.rank == 0:
+    print(norm)
+
+x += xtild
+# print(ksp.getConvergenceHistory())
 viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)
+viewer = PETSc.Viewer().createVTK('solution_2d_asm_xtild.vts', 'w', comm = PETSc.COMM_WORLD)
+xtild.view(viewer)
+
+norm = (A*x-bcopy).norm()
+if mpi.COMM_WORLD.rank == 0:
+    print(norm)
+#print(ksp.getResidualNorm()/normb, normb)
+
+#mpiexec -n 4 python schwarz.py  -elas_ksp_monitor_true_residual -elas_ksp_converged_reason -myasm_ksp_converged_reason -elas_ksp_rtol 1e-4 -elas_ksp_norm_type unpreconditioned
