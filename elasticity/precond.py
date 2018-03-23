@@ -7,6 +7,171 @@ import mpi4py.MPI as mpi
 import numpy as np
 
 class ASM(object):
+    def __init__(self, da_global, projection, h, lamb, mu):
+        self.da_global = da_global
+        self.proj = projection
+
+        (xs, xe), (ys, ye) = self.da_global.getRanges()
+        (gxs, gxe), (gys, gye) = self.da_global.getGhostRanges()
+        self.block = (slice(gxs, xe), slice(gys, ye))
+
+        self.da_local = PETSc.DMDA().create([xe-gxs, ye-gys], dof=2, 
+                                            stencil_width=1,
+                                            comm=PETSc.COMM_SELF)
+        mx, my = self.da_local.getSizes()
+        self.da_local.setUniformCoordinates(xmax=h[0]*mx, ymax=h[1]*my)
+
+        A = buildElasticityMatrix(self.da_local, h, lamb, mu)
+        A.assemble()
+
+        D = self.da_local.createGlobalVec()
+        Dlocal_a = self.da_local.getVecArray(D)
+        Dlocal = self.da_global.createLocalVec()
+        self.da_global.globalToLocal(self.proj.D, Dlocal)
+        D_a = self.da_global.getVecArray(Dlocal)
+
+        Dlocal_a[:, :] = D_a[self.block]
+        A.diagonalScale(D, D)
+
+        if mpi.COMM_WORLD.rank == 0:
+            bcApplyWestMat(self.da_local, A)
+
+        self.A = A
+
+        # build local solvers
+        self.ksp = PETSc.KSP().create()
+        self.ksp.setOperators(A)
+        self.ksp.setOptionsPrefix("myasm_")
+        self.ksp.setType('preonly')
+        # self.ksp.setType('cg')
+        pc = self.ksp.getPC()
+        # pc.setType('none')
+        pc.setType('lu')
+        self.ksp.setFromOptions()
+
+        # Construct work arrays
+        self.work_global = self.da_global.createLocalVec()
+        self.work1_local = self.da_local.createGlobalVec()
+        self.work2_local = self.da_local.createGlobalVec()
+
+    def mult(self, mat, x, y):
+        self.work_global.set(0.)
+        self.da_global.globalToLocal(x, self.work_global)
+
+        work_global_a = self.da_global.getVecArray(self.work_global)
+
+        work1_local_a = self.da_local.getVecArray(self.work1_local)
+        work1_local_a[:, :] = work_global_a[self.block]
+
+        work2_local_a = self.da_local.getVecArray(self.work2_local)
+        self.ksp.solve(self.work1_local, self.work2_local)
+
+        # self.work2_local = cg(self.A, self.work1_local)
+
+        self.work_global.set(0.)
+        sol_a = self.da_local.getVecArray(self.work2_local)
+
+        work_global_a[self.block] = sol_a[:, :]
+        self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
+
+        self.proj.apply(y)
+
+class MP_ASM(object):
+    def __init__(self, da_global, projection, h, lamb, mu):
+        self.da_global = da_global
+        self.proj = projection
+
+        (xs, xe), (ys, ye) = self.da_global.getRanges()
+        (gxs, gxe), (gys, gye) = self.da_global.getGhostRanges()
+        self.block = (slice(gxs, xe), slice(gys, ye))
+
+        self.da_local = PETSc.DMDA().create([xe-gxs, ye-gys], dof=2, 
+                                            stencil_width=1,
+                                            comm=PETSc.COMM_SELF)
+        mx, my = self.da_local.getSizes()
+        self.da_local.setUniformCoordinates(xmax=h[0]*mx, ymax=h[1]*my)
+
+        A = buildElasticityMatrix(self.da_local, h, lamb, mu)
+        A.assemble()
+
+        D = self.da_local.createGlobalVec()
+        Dlocal_a = self.da_local.getVecArray(D)
+        Dlocal = self.da_global.createLocalVec()
+        self.da_global.globalToLocal(self.proj.D, Dlocal)
+        D_a = self.da_global.getVecArray(Dlocal)
+
+        Dlocal_a[:, :] = D_a[self.block]
+        A.diagonalScale(D, D)
+
+        if mpi.COMM_WORLD.rank == 0:
+            bcApplyWestMat(self.da_local, A)
+
+        self.A = A
+
+        # build local solvers
+        self.ksp = PETSc.KSP().create()
+        self.ksp.setOperators(A)
+        self.ksp.setOptionsPrefix("myasm_")
+        self.ksp.setType('preonly')
+        # self.ksp.setType('cg')
+        pc = self.ksp.getPC()
+        # pc.setType('none')
+        pc.setType('lu')
+        self.ksp.setFromOptions()
+
+        # Construct work arrays
+        self.work_global = self.da_global.createLocalVec()
+        self.work1_local = self.da_local.createGlobalVec()
+        self.work2_local = self.da_local.createGlobalVec()
+
+    def mult(self, x, y):
+        self.work_global.set(0.)
+        self.da_global.globalToLocal(x, self.work_global)
+
+        work_global_a = self.da_global.getVecArray(self.work_global)
+
+        work1_local_a = self.da_local.getVecArray(self.work1_local)
+        work1_local_a[:, :] = work_global_a[self.block]
+
+        work2_local_a = self.da_local.getVecArray(self.work2_local)
+        self.ksp.solve(self.work1_local, self.work2_local)
+
+        # self.work2_local = cg(self.A, self.work1_local)
+
+        self.work_global.set(0.)
+        sol_a = self.da_local.getVecArray(self.work2_local)
+
+        for i in range(mpi.COMM_WORLD.size):
+            self.work_global.set(0.)
+            if mpi.COMM_WORLD.rank == i:
+                work_global_a[self.block] = sol_a[:, :]
+            self.da_global.localToGlobal(self.work_global, y[i], addv=PETSc.InsertMode.ADD_VALUES)
+
+            self.proj.apply(y[i])
+
+    def mult_z(self, x, y):
+        self.work_global.set(0.)
+        self.da_global.globalToLocal(x, self.work_global)
+
+        work_global_a = self.da_global.getVecArray(self.work_global)
+
+        work1_local_a = self.da_local.getVecArray(self.work1_local)
+        work1_local_a[:, :] = work_global_a[self.block]
+
+        work2_local_a = self.da_local.getVecArray(self.work2_local)
+        self.ksp.solve(self.work1_local, self.work2_local)
+
+        # self.work2_local = cg(self.A, self.work1_local)
+
+        self.work_global.set(0.)
+        sol_a = self.da_local.getVecArray(self.work2_local)
+
+        work_global_a[self.block] = sol_a[:, :]
+        self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
+
+        self.proj.apply(y)
+
+class ASM_old(object):
     def __init__(self, da_global, D_global, vecs, Avecs, h, lamb, mu):
         self.da_global = da_global
         self.vecs = vecs
@@ -75,7 +240,7 @@ class ASM(object):
         self.work1_local = self.da_local.createGlobalVec()
         self.work2_local = self.da_local.createGlobalVec()
 
-    def mult(self, mat, x, y):
+    def mult(self, x, y):
         self.work_global.set(0.)
         self.da_global.globalToLocal(x, self.work_global)
 
@@ -116,4 +281,10 @@ class PCASM(object):
 
     def apply(self, pc, x, y):
         y.array = self.P*x
-        # print('residual', mpi.COMM_WORLD.rank, x.dot(y), y.norm(), x.norm())
+
+class PC_MP_ASM(object):
+    def setUp(self, pc):
+        B, self.P = pc.getOperators()
+
+    def my_apply(self, x, y):
+        self.P.my_mult(x, y)

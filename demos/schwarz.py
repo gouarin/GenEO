@@ -92,20 +92,30 @@ bcApplyWest(da, A, b)
 # build nullspace and multiplicity
 D, vecs, Avecs = get_nullspace(da, A)
 
-asm = ASM(da, D, vecs, Avecs, [hx, hy], lamb, mu)
+RBM = PETSc.NullSpace().createRigidBody(da.getCoordinates())
+rbm_vecs = RBM.getVecs()
+for rbm_vec in rbm_vecs:
+    bcApplyWest_vec(da, rbm_vec)
+
+proj = projection(da, A, RBM)
+
+#asm = ASM_old(da, D, vecs, Avecs, [hx, hy], lamb, mu)
+asm = ASM(da, proj, [hx, hy], lamb, mu)
 P = PETSc.Mat().createPython(
     [x.getSizes(), b.getSizes()], comm=da.comm)
 P.setPythonContext(asm)
 P.setUp()
 
 # Set initial guess
-ptilde = da.createGlobalVec()
-for i in range(len(vecs)):
-    ptilde += vecs[i].dot(b)*vecs[i]
-x = ptilde.copy()
-xtild = ptilde.copy()
-bcApplyWest_vec(da, x)
-bcApplyWest_vec(da, xtild)
+xtild = proj.xcoarse(b)
+
+# ptilde = da.createGlobalVec()
+# for i in range(len(vecs)):
+#     ptilde += vecs[i].dot(b)*vecs[i]
+# x = ptilde.copy()
+# xtild = ptilde.copy()
+# bcApplyWest_vec(da, x)
+# bcApplyWest_vec(da, xtild)
 
 bcopy = b.copy()
 
