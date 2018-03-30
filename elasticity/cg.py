@@ -177,7 +177,6 @@ class KSP_MPCG(MyKSP):
 
                 ti = gamma0*alpha0
 
-            self.P.proj.apply_transpose(r)
             self.P.mult_z(r, z)
             rnorm = r.dot(z)
             ti /= rnorm

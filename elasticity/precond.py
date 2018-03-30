@@ -72,6 +72,7 @@ class ASM(object):
         sol_a = self.da_local.getVecArray(self.work2_local)
 
         work_global_a[self.block] = sol_a[:, :]
+        y.set(0.)
         self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
 
         self.proj.apply(y)
@@ -136,8 +137,6 @@ class MP_ASM(object):
         work2_local_a = self.da_local.getVecArray(self.work2_local)
         self.ksp.solve(self.work1_local, self.work2_local)
 
-        # self.work2_local = cg(self.A, self.work1_local)
-
         self.work_global.set(0.)
         sol_a = self.da_local.getVecArray(self.work2_local)
 
@@ -145,6 +144,8 @@ class MP_ASM(object):
             self.work_global.set(0.)
             if mpi.COMM_WORLD.rank == i:
                 work_global_a[self.block] = sol_a[:, :]
+            
+            y[i].set(0.)
             self.da_global.localToGlobal(self.work_global, y[i], addv=PETSc.InsertMode.ADD_VALUES)
 
             self.proj.apply(y[i])
@@ -161,12 +162,11 @@ class MP_ASM(object):
         work2_local_a = self.da_local.getVecArray(self.work2_local)
         self.ksp.solve(self.work1_local, self.work2_local)
 
-        # self.work2_local = cg(self.A, self.work1_local)
-
         self.work_global.set(0.)
         sol_a = self.da_local.getVecArray(self.work2_local)
 
         work_global_a[self.block] = sol_a[:, :]
+        y.set(0.)
         self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
 
         self.proj.apply(y)
@@ -258,6 +258,7 @@ class ASM_old(object):
         sol_a = self.da_local.getVecArray(self.work2_local)
 
         work_global_a[self.block] = sol_a[:, :]
+        y.set(0.)
         self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
 
         self.workg_global.set(0)
