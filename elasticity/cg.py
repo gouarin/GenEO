@@ -156,7 +156,6 @@ class KSP_MPCG(MyKSP):
                 self.ksp_Delta[-1].setType(ksp.Type.PREONLY)
                 pc = self.ksp_Delta[-1].getPC()
                 pc.setType(pc.Type.CHOLESKY)
-
                 self.ksp_Delta[-1].solve(self.gamma, alpha)
 
                 for i in range(self.ndom):
@@ -169,7 +168,7 @@ class KSP_MPCG(MyKSP):
                 Ap[-1] = A*p[-1]
                 delta = Ap[-1].dot(p[-1])
 
-                self.ksp_Delta.append(tmp)
+                self.ksp_Delta.append(delta)
                 alpha0 = gamma0/delta
 
                 x.axpy(alpha0, p[-1])
