@@ -11,15 +11,25 @@ class ASM(object):
         self.da_global = da_global
         self.proj = projection
 
-        (xs, xe), (ys, ye) = self.da_global.getRanges()
-        (gxs, gxe), (gys, gye) = self.da_global.getGhostRanges()
-        self.block = (slice(gxs, xe), slice(gys, ye))
+        ranges = self.da_global.getRanges()
+        ghost_ranges = self.da_global.getGhostRanges()
 
-        self.da_local = PETSc.DMDA().create([xe-gxs, ye-gys], dof=2, 
+        self.block = []
+        sizes = []
+        for r, gr in zip(ranges, ghost_ranges):
+            self.block.append(slice(gr[0], r[1]))
+            sizes.append(r[1] - gr[0])
+        self.block = tuple(self.block)
+
+        self.da_local = PETSc.DMDA().create(sizes, dof=len(sizes),
                                             stencil_width=1,
                                             comm=PETSc.COMM_SELF)
-        mx, my = self.da_local.getSizes()
-        self.da_local.setUniformCoordinates(xmax=h[0]*mx, ymax=h[1]*my)
+
+        mx = self.da_local.getSizes()
+        if len(mx) == 2:
+            self.da_local.setUniformCoordinates(xmax=h[0]*mx[0], ymax=h[1]*mx[1])
+        elif len(mx) == 3:
+            self.da_local.setUniformCoordinates(xmax=h[0]*mx[0], ymax=h[1]*mx[1], zmax=h[2]*mx[2])
 
         A = buildElasticityMatrix(self.da_local, h, lamb, mu)
         A.assemble()
@@ -30,7 +40,7 @@ class ASM(object):
         self.da_global.globalToLocal(self.proj.D, Dlocal)
         D_a = self.da_global.getVecArray(Dlocal)
 
-        Dlocal_a[:, :] = D_a[self.block]
+        Dlocal_a[...] = D_a[self.block]
         A.diagonalScale(D, D)
 
         if mpi.COMM_WORLD.rank == 0:
@@ -47,6 +57,7 @@ class ASM(object):
         pc = self.ksp.getPC()
         # pc.setType('none')
         pc.setType('lu')
+        pc.setFactorSolverPackage('mumps')
         self.ksp.setFromOptions()
 
         # Construct work arrays
@@ -84,8 +95,6 @@ class MP_ASM(object):
 
         ranges = self.da_global.getRanges()
         ghost_ranges = self.da_global.getGhostRanges()
-        # (xs, xe), (ys, ye) = self.da_global.getRanges()
-        # (gxs, gxe), (gys, gye) = self.da_global.getGhostRanges()
 
         self.block = []
         sizes = []
@@ -99,15 +108,12 @@ class MP_ASM(object):
                                             stencil_width=1,
                                             comm=PETSc.COMM_SELF)
 
-        # self.da_local = PETSc.DMDA().create([xe-gxs, ye-gys], dof=2, 
-        #                                     stencil_width=1,
-        #                                     comm=PETSc.COMM_SELF)
         mx = self.da_local.getSizes()
         if len(mx) == 2:
             self.da_local.setUniformCoordinates(xmax=h[0]*mx[0], ymax=h[1]*mx[1])
         elif len(mx) == 3:
             self.da_local.setUniformCoordinates(xmax=h[0]*mx[0], ymax=h[1]*mx[1], zmax=h[2]*mx[2])
-        
+
         A = buildElasticityMatrix(self.da_local, h, lamb, mu)
         A.assemble()
 
@@ -134,6 +140,7 @@ class MP_ASM(object):
         pc = self.ksp.getPC()
         #pc.setType('none')
         pc.setType('lu')
+        pc.setFactorSolverPackage('mumps')
         self.ksp.setFromOptions()
 
         # Construct work arrays
