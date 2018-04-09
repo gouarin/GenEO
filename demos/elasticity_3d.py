@@ -6,10 +6,7 @@ from petsc4py import PETSc
 from elasticity import *
 
 def rhs(coords, rhs):
-    x = coords[..., 0]
-    mask = x > 9.8
-    rhs[mask, 0] = 0
-    rhs[mask, 1] = -10
+    rhs[..., 1] = -9.81
 
 OptDB = PETSc.Options()
 Lx = OptDB.getInt('Lx', 10)

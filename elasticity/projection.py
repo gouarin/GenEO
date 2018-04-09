@@ -4,14 +4,22 @@ import numpy as np
 
 class projection:
     def __init__(self, da, A, RBM):
-        (xs, xe), (ys, ye) = da.getRanges()
-        (gxs, gxe), (gys, gye) = da.getGhostRanges()
+        # (xs, xe), (ys, ye) = da.getRanges()
+        # (gxs, gxe), (gys, gye) = da.getGhostRanges()
+        ranges = da.getRanges()
+        ghost_ranges = da.getGhostRanges()
 
         # Restriction operator
         R = da.createGlobalVec()
         Rlocal = da.createLocalVec()
         Rlocal_a = da.getVecArray(Rlocal)
-        Rlocal_a[gxs:xe, gys:ye] = 1
+        slices = []
+        for r, gr in zip(ranges, ghost_ranges):
+            slices.append(slice(gr[0], r[1]))
+        slices = tuple(slices)
+        Rlocal_a[slices] = 1
+
+        # Rlocal_a[gxs:xe, gys:ye] = 1
 
         # multiplicity
         D = da.createGlobalVec()
@@ -60,19 +68,14 @@ class projection:
         
         self.ksp_Delta = PETSc.KSP().create(comm=PETSc.COMM_SELF)
         self.ksp_Delta.setOperators(self.Delta)
-        #self.ksp_Delta.getType()
         self.ksp_Delta.setType('preonly')
         pc = self.ksp_Delta.getPC()
         pc.setType('cholesky')
-
-#        if mpi.COMM_WORLD.rank == 3:
-#            self.Delta.view()
 
         self.work = da.createGlobalVec()
         self.gamma = PETSc.Vec().create(comm=PETSc.COMM_SELF)
         self.gamma.setType(PETSc.Vec.Type.SEQ)
         self.gamma.setSizes(len(coarse_vecs))
-
 
     def apply(self, x):
         alpha = self.gamma.duplicate()
@@ -82,11 +85,8 @@ class projection:
         self.ksp_Delta.solve(self.gamma, alpha)
         
         for i in range(len(self.coarse_vecs)):
-            x.axpy(-1.*alpha[i], self.coarse_vecs[i])
- #       for vec, Avec in zip(self.coarse_vecs, self.coarse_Avecs):
- #           self.work += Avec.dot(x)*vec
- #       
-
+            x.axpy(-alpha[i], self.coarse_vecs[i])
+ 
     def xcoarse(self, rhs):
         alpha = self.gamma.duplicate()
         for i, vec in enumerate(self.coarse_vecs):
@@ -108,4 +108,4 @@ class projection:
         self.ksp_Delta.solve(self.gamma, alpha)
         
         for i in range(len(self.coarse_vecs)):
-            x.axpy(-1.*alpha[i], self.coarse_Avecs[i])
+            x.axpy(-alpha[i], self.coarse_Avecs[i])

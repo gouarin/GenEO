@@ -3,13 +3,20 @@ import numpy as np
 from six.moves import range
 
 def bcApplyWest_vec(da, B):
-    mx, my = da.getSizes()
-    (xs, xe), (ys, ye) = da.getRanges()
     b = da.getVecArray(B)
+    ranges = da.getRanges()
+    dim = len(ranges)
+    xs = ranges[0][0]
     if xs == 0:
-        for i in range(ys, ye):
-            b[xs, i, 0] = 0
-            b[xs, i, 1] = 0
+        for i in range(dim):
+            b[xs, ..., i] = 0
+
+    # mx, my = da.getSizes()
+    # (xs, xe), (ys, ye) = da.getRanges()
+    # if xs == 0:
+    #     for i in range(ys, ye):
+    #         b[xs, i, 0] = 0
+    #         b[xs, i, 1] = 0
 
 def bcApplyWestMat(da, A):
     """
@@ -101,13 +108,22 @@ def bcApplyWest(da, A, B):
 
     A.zeroRowsLocal(rows)
 
-    mx, my = da.getSizes()
-    (xs, xe), (ys, ye) = da.getRanges()
     b = da.getVecArray(B)
-    if xs == 0:
-        for i in range(ys, ye):
-            b[xs, i, 0] = 0
-            b[xs, i, 1] = 0
+    ranges = da.getRanges()
+    xs = ranges[0][0]
+    if  xs == 0:
+        for i in range(dim):
+            b[xs, ..., i] = 0
+        #b[xs, ...] = 0
+    # if dim == 2:
+    #     mx, my = da.getSizes()
+    #     (xs, xe), (ys, ye) = da.getRanges()
+    #     b = da.getVecArray(B)
+    #     if xs == 0:
+    #         for i in range(ys, ye):
+    #             b[xs, i, 0] = 0
+    #             b[xs, i, 1] = 0
+    # elif dim == 3:
 
 def bcApplyEast(da, A, B):
     """
