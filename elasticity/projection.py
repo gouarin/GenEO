@@ -1,6 +1,7 @@
 from petsc4py import PETSc
 import mpi4py.MPI as mpi
 import numpy as np
+from .bc import bcApplyWest_vec
 
 class projection:
     def __init__(self, da, A, RBM):
@@ -32,14 +33,14 @@ class projection:
         self.Aglobal = A
         self.da = da
 
-    def setRBM(self, ksp, F, size, nrb, block):
+    def setRBM(self, ksp, F, size, nrb, block, da_local):
         work = self.da.createLocalVec()
 
         rbm_vecs = []
         for i in range(nrb):
             F.setMumpsIcntl(25, i+1)
-            rbm_vecs.append(PETSc.Vec().createSeq(size))
-            ksp.solve(rbm_vecs[-1], rbm_vecs[-1])
+            rbm_vecs.append(da_local.createGlobalVec())
+            ksp.solve(rbm_vecs[i], rbm_vecs[i])
 
         coarse_vecs= []
         for i in range(mpi.COMM_WORLD.size):
@@ -53,7 +54,8 @@ class projection:
                 coarse_vecs.append(self.da.createGlobalVec())
                 if i == mpi.COMM_WORLD.rank:
                     work_a = self.da.getVecArray(work)
-                    work_a[block] = rbm_vecs[irbm].array.reshape(work_a[block].shape)
+                    rbm_a = da_local.getVecArray(rbm_vecs[irbm])
+                    work_a[block] = rbm_a[...]
                 self.da.localToGlobal(work, coarse_vecs[-1], addv=PETSc.InsertMode.ADD_VALUES)
 
         self.Delta = PETSc.Mat().create(comm=PETSc.COMM_SELF)

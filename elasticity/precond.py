@@ -155,7 +155,7 @@ class MP_ASM(object):
 
         nrb = F.getMumpsInfog(28)
 
-        projection.setRBM(self.ksp, F, self.A.size[0], nrb, self.block)
+        projection.setRBM(self.ksp, F, self.A.size[0], nrb, self.block, self.da_local)
 
         F.setMumpsIcntl(25, 0)
 
@@ -171,7 +171,7 @@ class MP_ASM(object):
         # else:
         #     pc.setType('lu')
 
-        if nrb != 0:
+        if nrb == 0:
             pc.setType('lu')
 
         # Construct work arrays
