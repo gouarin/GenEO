@@ -58,6 +58,8 @@ class ASM(object):
         # pc.setType('none')
         pc.setType('lu')
         pc.setFactorSolverPackage('mumps')
+        pc.setMumpsIcntl(24, 1)
+        pc.setMumpsIcntl(25, -1)
         self.ksp.setFromOptions()
 
         # Construct work arrays
@@ -133,15 +135,44 @@ class MP_ASM(object):
 
         # build local solvers
         self.ksp = PETSc.KSP().create()
-        self.ksp.setOperators(A)
+        self.ksp.setOperators(self.A)
         self.ksp.setOptionsPrefix("myasm_")
         self.ksp.setType('preonly')
         #self.ksp.setType('cg')
         pc = self.ksp.getPC()
         #pc.setType('none')
-        pc.setType('lu')
+        pc.setType('cholesky')
         pc.setFactorSolverPackage('mumps')
+        pc.setFactorMatSolverPackage()
+        F = pc.getFactorMatrix()
+
+        F.setMumpsIcntl(7, 2)
+        F.setMumpsIcntl(24, 1)
+        F.setMumpsCntl(3, 1e-6)
+        
+        self.ksp.setUp()
         self.ksp.setFromOptions()
+
+        nrb = F.getMumpsInfog(28)
+
+        projection.setRBM(self.ksp, F, self.A.size[0], nrb, self.block, self.da_local)
+
+        F.setMumpsIcntl(25, 0)
+
+        # if nrb != 0:
+        #     projection.setRBM(self.ksp, self.A)
+        #     rhs = []
+        #     for i in range(nrb):
+        #         F.setMumpsIcntl(25, i+1)
+        #         rhs.append(PETSc.Vec().createSeq(self.A.size[0]))
+        #         self.ksp.solve(rhs[-1], rhs[-1])
+
+        #     F.setMumpsIcntl(25, 0)
+        # else:
+        #     pc.setType('lu')
+
+        if nrb == 0:
+            pc.setType('lu')
 
         # Construct work arrays
         self.work_global = self.da_global.createLocalVec()

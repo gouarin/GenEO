@@ -1,6 +1,7 @@
 from petsc4py import PETSc
 import mpi4py.MPI as mpi
 import numpy as np
+from .bc import bcApplyWest_vec
 
 class projection:
     def __init__(self, da, A, RBM):
@@ -28,20 +29,34 @@ class projection:
         da.globalToLocal(D, Dlocal)
         self.D = D
 
-        work1 = da.createLocalVec()
-        work2 = da.createLocalVec()
+
+        self.Aglobal = A
+        self.da = da
+
+    def setRBM(self, ksp, F, size, nrb, block, da_local):
+        work = self.da.createLocalVec()
+
+        rbm_vecs = []
+        for i in range(nrb):
+            F.setMumpsIcntl(25, i+1)
+            rbm_vecs.append(da_local.createGlobalVec())
+            ksp.solve(rbm_vecs[i], rbm_vecs[i])
 
         coarse_vecs= []
-        rbm_vecs = RBM.getVecs()
         for i in range(mpi.COMM_WORLD.size):
-            for ivec, rbm_vec in enumerate(rbm_vecs):
-                coarse_vecs.append(da.createGlobalVec())
-                work1.set(0)
-                coarse_vecs[-1].set(0) #NICOLE: do I need this ? 
-                da.globalToLocal(rbm_vec, work2)
+            work.set(0.)
+            if i == mpi.COMM_WORLD.rank:
+                nrbl = nrb
+            else:
+                nrbl = None
+            nrbl = mpi.COMM_WORLD.bcast(nrbl, root=i)
+            for irbm in range(nrbl):
+                coarse_vecs.append(self.da.createGlobalVec())
                 if i == mpi.COMM_WORLD.rank:
-                    work1 = work2*Rlocal/Dlocal
-                da.localToGlobal(work1, coarse_vecs[-1], addv=PETSc.InsertMode.ADD_VALUES)
+                    work_a = self.da.getVecArray(work)
+                    rbm_a = da_local.getVecArray(rbm_vecs[irbm])
+                    work_a[block] = rbm_a[...]
+                self.da.localToGlobal(work, coarse_vecs[-1], addv=PETSc.InsertMode.ADD_VALUES)
 
         self.Delta = PETSc.Mat().create(comm=PETSc.COMM_SELF)
         self.Delta.setType(PETSc.Mat.Type.SEQDENSE)
@@ -52,9 +67,9 @@ class projection:
         #scale 
         coarse_Avecs = []
         for vec in coarse_vecs:
-            coarse_Avecs.append(A*vec)
-            vec.scale(1./np.sqrt(vec.dot(A*vec)))
-            coarse_Avecs[-1] = A*vec
+            coarse_Avecs.append(self.Aglobal*vec)
+            vec.scale(1./np.sqrt(vec.dot(self.Aglobal*vec)))
+            coarse_Avecs[-1] = self.Aglobal*vec
         #fill coarse problem matrix
         for i, vec in enumerate(coarse_vecs):
             for j in range(i+1):
@@ -63,6 +78,8 @@ class projection:
                 self.Delta[j, i] = tmp
 
         self.Delta.assemble()
+        if mpi.COMM_WORLD.rank == 0:
+            self.Delta.view()
         self.coarse_vecs = coarse_vecs
         self.coarse_Avecs = coarse_Avecs
         
@@ -71,8 +88,9 @@ class projection:
         self.ksp_Delta.setType('preonly')
         pc = self.ksp_Delta.getPC()
         pc.setType('cholesky')
+        #pc.setFactorSolverPackage('mumps')
 
-        self.work = da.createGlobalVec()
+        self.work = self.da.createGlobalVec()
         self.gamma = PETSc.Vec().create(comm=PETSc.COMM_SELF)
         self.gamma.setType(PETSc.Vec.Type.SEQ)
         self.gamma.setSizes(len(coarse_vecs))

@@ -77,9 +77,9 @@ ksp.solve(b, x)
 # if mpi.COMM_WORLD.rank == 0:
 #     print(norm)
 
-# x += xtild
-# viewer = PETSc.Viewer().createVTK('solution_3d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
-# x.view(viewer)
+x += xtild
+viewer = PETSc.Viewer().createVTK('solution_3d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
+x.view(viewer)
 
 # norm = (A*x-bcopy).norm()
 # if mpi.COMM_WORLD.rank == 0:
