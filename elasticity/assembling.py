@@ -98,6 +98,7 @@ def buildElasticityMatrix(da, h, lamb, mu):
     """
     Melem = getMatElemElasticity(h, lamb, mu)
     A = da.createMatrix()
+    
     elem = da.getElements()
 
     ie = 0
@@ -112,6 +113,33 @@ def buildElasticityMatrix(da, h, lamb, mu):
 
         A.setValuesLocal(ind, ind, Melem_num, PETSc.InsertMode.ADD_VALUES)
         ie += 1
+
+    return A
+
+def buildIdentityMatrix(da):
+    """
+    Assemble the matrix of the elasticity operator
+    using Q1 finite elements.
+
+    Parameters
+    ==========
+
+    da : petsc.DMDA
+        The mesh structure.
+
+    Returns
+    =======
+    A: petsc.Mat
+        The matrix of the elasticity operator.
+    """
+    A = da.createMatrix()
+    elem = da.getElements()
+
+    dof = da.getDof()
+    Melem = np.eye(8)
+    for e in elem:
+        ind = getIndices(e, dof)
+        A.setValuesLocal(ind, ind, Melem, PETSc.InsertMode.INSERT_VALUES)
 
     return A
 

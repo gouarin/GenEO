@@ -25,6 +25,7 @@ h = [hx, hy, hz]
 
 da = PETSc.DMDA().create([nx, ny, nz], dof=3, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly, zmax=Lz)
+da.setMatType(PETSc.Mat.Type.IS)
 
 # constant young modulus
 E = 30000
@@ -46,21 +47,21 @@ rbm_vecs = RBM.getVecs()
 for rbm_vec in rbm_vecs:
     bcApplyWest_vec(da, rbm_vec)
 
-proj = projection(da, A, RBM)
+#proj = projection(da, A, RBM)
 
-asm = MP_ASM(da, proj, h, lamb, mu)
+asm = MP_ASM(A)
 P = PETSc.Mat().createPython(
     [x.getSizes(), b.getSizes()], comm=da.comm)
 P.setPythonContext(asm)
 P.setUp()
 
 # Set initial guess
-xtild = proj.xcoarse(b)
+xtild = asm.proj.xcoarse(b)
 bcopy = b.copy()
 b -= A*xtild
 
 x.setRandom()
-proj.apply(x)
+asm.proj.apply(x)
 bcApplyWest_vec(da, x)
 xnorm = b.dot(x)/x.dot(A*x)
 x *= xnorm

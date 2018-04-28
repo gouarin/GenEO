@@ -61,6 +61,7 @@ def bcApplyWestMat(da, A):
         for i in range(1, dof):
             rows[i::dof] = rows[::dof] + i
 
+    # A.zeroRowsColumnsLocal(rows)
     A.zeroRowsLocal(rows)
 
 def bcApplyWest(da, A, B):
@@ -86,10 +87,14 @@ def bcApplyWest(da, A, B):
     """
     dim = da.getDim()
     dof = da.getDof()
-    ranges = da.getGhostRanges()
+    ranges = da.getRanges()
+    ghost_ranges = da.getGhostRanges()
+
     sizes = np.empty(dim, dtype=np.int32)
-    for ir, r in enumerate(ranges):
-        sizes[ir] = r[1] - r[0]
+    ir = 0
+    for r , gr in zip(ranges, ghost_ranges):
+        sizes[ir] = r[1] - gr[0]
+        ir += 1
 
     rows = np.empty(0, dtype=np.int32)
     values = np.empty(0)
@@ -106,7 +111,7 @@ def bcApplyWest(da, A, B):
         for i in range(1, dof):
             rows[i::dof] = rows[::dof] + i
 
-    A.zeroRowsLocal(rows)
+    A.zeroRowsColumnsLocal(rows)
 
     b = da.getVecArray(B)
     ranges = da.getRanges()
@@ -114,16 +119,6 @@ def bcApplyWest(da, A, B):
     if  xs == 0:
         for i in range(dim):
             b[xs, ..., i] = 0
-        #b[xs, ...] = 0
-    # if dim == 2:
-    #     mx, my = da.getSizes()
-    #     (xs, xe), (ys, ye) = da.getRanges()
-    #     b = da.getVecArray(B)
-    #     if xs == 0:
-    #         for i in range(ys, ye):
-    #             b[xs, i, 0] = 0
-    #             b[xs, i, 1] = 0
-    # elif dim == 3:
 
 def bcApplyEast(da, A, B):
     """

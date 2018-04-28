@@ -23,6 +23,7 @@ hy = Ly/(ny - 1)
 
 da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly)
+da.setMatType(PETSc.Mat.Type.IS)
 
 # constant young modulus
 E = 30000
@@ -34,31 +35,25 @@ mu = .5*E/(1+nu)
 
 x = da.createGlobalVec()
 b = buildRHS(da, [hx, hy], rhs)
+
 A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
 A.assemble()
 
 bcApplyWest(da, A, b)
 
-RBM = PETSc.NullSpace().createRigidBody(da.getCoordinates())
-rbm_vecs = RBM.getVecs()
-for rbm_vec in rbm_vecs:
-    bcApplyWest_vec(da, rbm_vec)
-
-proj = projection(da, A, RBM)
-
-asm = MP_ASM(da, proj, [hx, hy], lamb, mu)
+asm = MP_ASM(A)
 P = PETSc.Mat().createPython(
     [x.getSizes(), b.getSizes()], comm=da.comm)
 P.setPythonContext(asm)
 P.setUp()
 
 # Set initial guess
-xtild = proj.xcoarse(b)
+xtild = asm.proj.xcoarse(b)
 bcopy = b.copy()
 b -= A*xtild
 
 x.setRandom()
-proj.apply(x)
+asm.proj.apply(x)
 bcApplyWest_vec(da, x)
 xnorm = b.dot(x)/x.dot(A*x)
 x *= xnorm
