@@ -7,11 +7,11 @@ class projection:
     def __init__(self, A):
         r, _ = A.getLGMap()
         # convert matis to mpiaij
-        A_mpiaij = A.getMPIXAIJ()
+        A_mpiaij = A.convertISToAIJ()
         is_A = PETSc.IS().createGeneral(r.indices)
 
         A_mpiaij_local = A_mpiaij.createSubMatrices(is_A)[0]
-        A_scaled = A.copy().getLocalMat()
+        A_scaled = A.copy().getISLocalMat()
 
         v1 = A_mpiaij_local.getDiagonal()
         v2 = A_scaled.getDiagonal()
