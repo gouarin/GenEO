@@ -1,4 +1,3 @@
-
 from .assembling import buildElasticityMatrix
 from .bc import bcApplyWestMat, bcApplyWest_vec
 from .cg import cg
@@ -150,7 +149,7 @@ class MP_ASM(object):
         nrb = F.getMumpsInfog(28)
         self.proj.constructCoarse(self.ksp, F, nrb)
 
-        F.setMumpsIcntl(25, 0)
+        F.setMumpsIcntl(25, 0) #TODO at the moment I also do this in projection.py, it should only be done once
 
         # if nrb != 0:
         #     projection.setRBM(self.ksp, self.A)

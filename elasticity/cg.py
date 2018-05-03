@@ -183,6 +183,8 @@ class KSP_MPCG(MyKSP):
             its = ksp.getIterationNumber()
 
             if ti < self.tol:
+                if mpi.COMM_WORLD.rank == 0:
+                    print('multipreconditioning this iteration')
                 p.append(self.add_vectors())
                 Ap.append(self.add_vectors())
                 self.P.mult(r, p[-1])

@@ -2,6 +2,7 @@ from petsc4py import PETSc
 import mpi4py.MPI as mpi
 import numpy as np
 from .bc import bcApplyWest_vec
+from slepc4py import SLEPc
 
 class projection:
     def __init__(self, A):
@@ -23,6 +24,7 @@ class projection:
         self.scatter_l2g = PETSc.Scatter().create(vlocal, None, vglobal, is_A)
         self.A = A
         self.A_scaled = A_scaled
+        self.A_mpiaij_local = A_mpiaij_local
 
     def constructCoarse(self, ksp, F, nrb):
         # coare_vecs is a list of local vectors
@@ -36,22 +38,52 @@ class projection:
             rbm_vecs.append(workl.duplicate())
             rbm_vecs[i].set(0.)
             ksp.solve(rbm_vecs[i], rbm_vecs[i])
+        
+        #TODO: do this only once, at the moment it is done here and also in precond.py after the call to constructCoarse
+        F.setMumpsIcntl(25, 0)
+
+        # Add the GenEO coarse vectors
+        GenEO = 0
+        tauGenEO = 0.05
+        if GenEO:
+            #HERE
+            eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
+            eps.setDimensions(nev=10)
+
+            eps.setProblemType(SLEPc.EPS.ProblemType.GHIEP)
+            eps.setOperators(self.A_scaled , self.A_mpiaij_local )
+            #eps.setWhichEigenpairs(SLEPc.EPS.Which.SMALLEST_REAL)
+            eps.setWhichEigenpairs(SLEPc.EPS.Which.TARGET_REAL)
+            eps.setTarget(0.)
+            if nrb > 0 :
+                eps.setDeflationSpace(rbm_vecs)
+            ST = eps.getST()
+            ST.setType("sinvert") 
+#TODO: use the factorization already computed by mumps. The following line works fine here but some parameter in the ksp must be changed because the next call to ksp.solve in precond.mult produces an error
+#            ST.setKSP(ksp)
+#TODO turn off eps.setpurify
+            eps.setFromOptions()
+#            eps.view()
+            eps.solve()
+#            print(mpi.COMM_WORLD.rank, eps.getConverged())
+            for i in range(eps.getConverged()):
+                if(abs(eps.getEigenvalue(i))<tauGenEO): #TODO tell slepc that the eigenvalues are real
+                   rbm_vecs.append(workl.duplicate())
+                   eps.getEigenvector(i,rbm_vecs[-1])
+#                print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))
+
+        ncoarse = len(rbm_vecs)
+        print(f"I am subdomain number {mpi.COMM_WORLD.rank} and I contribute {ncoarse} vectors to the coarse space")
 
         coarse_vecs= []
         for i in range(mpi.COMM_WORLD.size):
-            nrbl = nrb if i == mpi.COMM_WORLD.rank else None
+            nrbl = ncoarse if i == mpi.COMM_WORLD.rank else None
             nrbl = mpi.COMM_WORLD.bcast(nrbl, root=i)
             
             for irbm in range(nrbl):
                 coarse_vecs.append(rbm_vecs[irbm] if i == mpi.COMM_WORLD.rank else None)
 
-        n = len(coarse_vecs)
-
-        self.Delta = PETSc.Mat().create(comm=PETSc.COMM_SELF)
-        self.Delta.setType(PETSc.Mat.Type.SEQDENSE)
-        self.Delta.setSizes([len(coarse_vecs),len(coarse_vecs)])
-        self.Delta.setOption(PETSc.Mat.Option.SYMMETRIC, True)
-        self.Delta.setPreallocationDense(None)
+        #n = len(coarse_vecs)
 
         #scale 
         coarse_Avecs = []
@@ -77,6 +109,15 @@ class projection:
             self.scatter_l2g(workl, work, PETSc.InsertMode.ADD_VALUES)
             coarse_Avecs[-1] = self.A*work
 
+        self.Delta = PETSc.Mat().create(comm=PETSc.COMM_SELF)
+        self.Delta.setType(PETSc.Mat.Type.SEQDENSE)
+        self.Delta.setSizes([len(coarse_vecs),len(coarse_vecs)])
+        self.Delta.setOption(PETSc.Mat.Option.SYMMETRIC, True)
+        self.Delta.setPreallocationDense(None)
+
+
+
+
         #fill coarse problem matrix
         for i, vec in enumerate(coarse_vecs):
             if vec:
@@ -92,8 +133,8 @@ class projection:
                 self.Delta[j, i] = tmp
 
         self.Delta.assemble()
-        if mpi.COMM_WORLD.rank == 0:
-            self.Delta.view()
+#        if mpi.COMM_WORLD.rank == 0:
+#            self.Delta.view()
         self.coarse_vecs = coarse_vecs
         self.coarse_Avecs = coarse_Avecs
         
