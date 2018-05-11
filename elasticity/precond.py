@@ -1,7 +1,7 @@
 from .assembling import buildElasticityMatrix
 from .bc import bcApplyWestMat, bcApplyWest_vec
 from .cg import cg
-from .projection import projection
+from .projection import projection, newprojection
 from petsc4py import PETSc
 from slepc4py import SLEPc
 import mpi4py.MPI as mpi
@@ -89,82 +89,39 @@ class ASM(object):
         y.set(0.)
         self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
 
-        self.proj.apply(y)
+        self.proj.project(y)
 
 class MP_ASM(object):
     def __init__(self, A):
-        self.proj = projection(A)
+        r, _ = A.getLGMap()
+        is_A = PETSc.IS().createGeneral(r.indices)
 
-        # I = A.duplicate()
-        # I.shift(1.)
-        # I.assemble()
+        # convert matis to mpiaij
+        A_mpiaij = A.convertISToAIJ()
+        A_mpiaij_local = A_mpiaij.createSubMatrices(is_A)[0]
 
-        # I2 = A.duplicate()
-        # I2.shift(3.)
-        # I2[2, 2] = 0
-        # I2[3, 3] = 0
-        # I2.assemble()
+        A_scaled = A.copy().getISLocalMat()
+        v1 = A_mpiaij_local.getDiagonal()
+        v2 = A_scaled.getDiagonal()
+        A_scaled.diagonalScale(v1/v2, v1/v2)
 
-        # eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
-        # eps.setDimensions(nev=10)
+        self.proj = projection(A,is_A,A_scaled,A_mpiaij_local)
 
-        # eps.setProblemType(SLEPc.EPS.ProblemType.GHIEP)
-        # eps.setOperators(A, None)
-        # eps.setWhichEigenpairs(SLEPc.EPS.Which.SMALLEST_REAL)
-
-        # # eps.setProblemType(SLEPc.EPS.ProblemType.GHEP)
-        # # eps.setOperators(A, I)
-        # # eps.setWhichEigenpairs(SLEPc.EPS.Which.SMALLEST_REAL)
-
-        # #eps.setType(SLEPc.EPS.Type.LANCZOS)
-        # eps.setFromOptions()
-        # eps.view()
-        # # eps.solve()
-        # # print(mpi.COMM_WORLD.rank, eps.getConverged())
-        # # for i in range(eps.getConverged()):
-        # #     print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))
-
-        self.A = self.proj.A_scaled
+        Alocal = A_scaled
 
         # build local solvers
         self.ksp = PETSc.KSP().create()
-        self.ksp.setOperators(self.A)
+        self.ksp.setOperators(Alocal)
         self.ksp.setOptionsPrefix("myasm_")
         self.ksp.setType('preonly')
-        #self.ksp.setType('cg')
+       # self.ksp.setFromOptions()
         pc = self.ksp.getPC()
         #pc.setType('none')
         pc.setType('cholesky')
         pc.setFactorSolverType('mumps')
-        pc.setFactorSetUpSolverType()
-        F = pc.getFactorMatrix()
 
-        F.setMumpsIcntl(7, 2)
-        F.setMumpsIcntl(24, 1)
-        F.setMumpsCntl(3, 1e-6)
-        
-        self.ksp.setUp()
-        self.ksp.setFromOptions()
+        self.proj.constructCoarse(self.ksp)
 
-        nrb = F.getMumpsInfog(28)
-        self.proj.constructCoarse(self.ksp, F, nrb)
-
-        F.setMumpsIcntl(25, 0) #TODO at the moment I also do this in projection.py, it should only be done once
-
-        # if nrb != 0:
-        #     projection.setRBM(self.ksp, self.A)
-        #     rhs = []
-        #     for i in range(nrb):
-        #         F.setMumpsIcntl(25, i+1)
-        #         rhs.append(PETSc.Vec().createSeq(self.A.size[0]))
-        #         self.ksp.solve(rhs[-1], rhs[-1])
-
-        #     F.setMumpsIcntl(25, 0)
-        # else:
-        #     pc.setType('lu')
-
-        # if nrb == 0:
-        #     pc.setType('lu')
         self.workl_1 = self.proj.workl.copy()
         self.workl_2 = self.proj.workl.copy()
         self.scatter_l2g = self.proj.scatter_l2g
@@ -173,8 +130,7 @@ class MP_ASM(object):
         # self.work_global = self.da_global.createLocalVec()
         # self.work1_local = self.da_local.createGlobalVec()
         # self.work2_local = self.da_local.createGlobalVec()
-
-    def mult(self, x, y):
+    def MP_mult(self, x, y):
         self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         self.ksp.solve(self.workl_1, self.workl_2)
 
@@ -185,15 +141,83 @@ class MP_ASM(object):
 
             y[i].set(0.)
             self.scatter_l2g(self.workl_1, y[i], PETSc.InsertMode.ADD_VALUES)
-            self.proj.apply(y[i])
+            self.proj.project(y[i])
 
-    def mult_z(self, x, y):
+    def mult(self, x, y):
         self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         self.ksp.solve(self.workl_1, self.workl_2)
 
         y.set(0.)
         self.scatter_l2g(self.workl_2, y, PETSc.InsertMode.ADD_VALUES)
-        self.proj.apply(y)
+        self.proj.project(y)
+
+    def apply(self, pc, x, y):
+        self.mult(x,y)
+
+class deflated_ASM(object):
+    def __init__(self, A):
+        r, _ = A.getLGMap()
+        is_A = PETSc.IS().createGeneral(r.indices)
+
+        # convert matis to mpiaij
+        A_mpiaij = A.convertISToAIJ()
+        A_mpiaij_local = A_mpiaij.createSubMatrices(is_A)[0]
+
+        A_scaled = A.copy().getISLocalMat()
+        v1 = A_mpiaij_local.getDiagonal()
+        v2 = A_scaled.getDiagonal()
+        A_scaled.diagonalScale(v1/v2, v1/v2)
+        vglobal, _ = A.getVecs()
+        vlocal, _ = A_scaled.getVecs()
+
+        #The default local solver is Neumann-Neumann
+        Alocal = A_scaled
+        self.localksp = PETSc.KSP().create()
+        self.localksp.setOperators(Alocal)
+        self.localksp.setOptionsPrefix("myasm_")
+        self.localksp.setType('preonly')
+        localpc = self.localksp.getPC()
+        localpc.setType('cholesky')
+        localpc.setFactorSolverType('mumps')
+
+        self.A = A
+        self.A_scaled = A_scaled
+        self.A_mpiaij_local = A_mpiaij_local
+        self.workl_1 = vlocal.copy()
+        self.workl_2 = self.workl_1.copy()
+        self.scatter_l2g = PETSc.Scatter().create(vlocal, None, vglobal, is_A)
+
+    def setup_preconditioners(self,newlocalksp=None, GenEO=1, tauGenEO_lambdamin = 0., tauGenEO_lambdamax = 0.1):
+        if newlocalksp:
+            self.localksp = newlocalksp
+            print('the local ksp has been changed')
+        self.proj = newprojection(self,GenEO, tauGenEO_lambdamin, tauGenEO_lambdamax)
+
+
+    def MP_mult(self, x, y):
+        self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.localksp.solve(self.workl_1, self.workl_2)
+
+        for i in range(mpi.COMM_WORLD.size):
+            self.workl_1.set(0)
+            if mpi.COMM_WORLD.rank == i:
+                self.workl_1 = self.workl_2.copy()
+
+            y[i].set(0.)
+            self.scatter_l2g(self.workl_1, y[i], PETSc.InsertMode.ADD_VALUES)
+            self.proj.project(y[i])
+
+    def mult(self, x, y):
+        self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.localksp.solve(self.workl_1, self.workl_2)
+
+        y.set(0.)
+        self.scatter_l2g(self.workl_2, y, PETSc.InsertMode.ADD_VALUES)
+        self.proj.project(y)
+
+    def apply(self, pc, x, y):
+        self.mult(x,y)
+
 
 class ASM_old(object):
     def __init__(self, da_global, D_global, vecs, Avecs, h, lamb, mu):

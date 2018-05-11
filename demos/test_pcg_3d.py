@@ -60,7 +60,7 @@ bcopy = b.copy()
 b -= A*xtild
 
 x.setRandom()
-proj.apply(x)
+proj.project(x)
 bcApplyWest_vec(da, x)
 xnorm = b.dot(x)/x.dot(A*x)
 x *= xnorm

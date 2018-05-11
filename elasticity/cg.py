@@ -119,21 +119,21 @@ class KSP_MPCG(MyKSP):
         #
 
         # x.setRandom()
-        # self.P.proj.apply(x)
+        # self.P.proj.project(x)
         # bcApplyWest_vec(self.P.da_global, x)
         # xnorm = b.dot(x)/x.dot(A*x)
         # x *= xnorm
 
         A.mult(x, r)
         r.aypx(-1, b)
-        self.P.proj.apply_transpose(r)
+        self.P.proj.project_transpose(r)
 
         rnorm = r.dot(r)
         its = 0
         if mpi.COMM_WORLD.rank == 0:
             print(f'ite: {its} residual -> {rnorm}')
 
-        self.P.mult(r, p[-1])
+        self.P.MP_mult(r, p[-1])
 
         alpha = self.gamma.duplicate()
         beta = self.gamma.duplicate()
@@ -176,7 +176,7 @@ class KSP_MPCG(MyKSP):
 
                 ti = gamma0*alpha0
 
-            self.P.mult_z(r, z)
+            self.P.mult(r, z)
             rnorm = r.dot(z)
             ti /= rnorm
 
@@ -187,7 +187,7 @@ class KSP_MPCG(MyKSP):
                     print('multipreconditioning this iteration')
                 p.append(self.add_vectors())
                 Ap.append(self.add_vectors())
-                self.P.mult(r, p[-1])
+                self.P.MP_mult(r, p[-1])
             else:
                 p.append(z.copy())
                 Ap.append(z.duplicate())
@@ -219,9 +219,9 @@ class KSP_MPCG(MyKSP):
 
             if isinstance(p[-1], list):
                 for i in range(self.ndom):
-                    self.P.proj.apply(p[-1][i])
+                    self.P.proj.project(p[-1][i])
             else:
-                self.P.proj.apply(p[-1])
+                self.P.proj.project(p[-1])
 
             if mpi.COMM_WORLD.rank == 0:
                 print(f'ite: {its} residual -> {rnorm} ti -> {ti}')

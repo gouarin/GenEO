@@ -46,7 +46,33 @@ A.assemble()
 
 bcApplyWest(da, A, b)
 
-asm = MP_ASM(A)
+asm = deflated_ASM(A)
+#test number 1: BNN+GenEO for large eigenvalues (default)
+asm.setup_preconditioners()
+
+##test number 2: classical Additive Schwarz + GenEO for small eigenvalues 
+#localksp = PETSc.KSP().create()                                                                    
+#localksp.setOperators(asm.A_mpiaij_local) 
+#localksp.setOptionsPrefix("myasm_")                                                                   
+#localksp.setType('preonly')                                                                           
+#localpc = localksp.getPC()
+#localpc.setType('cholesky')
+#localpc.setFactorSolverType('mumps')  
+#asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.)
+
+###test number 3: diagonal preconditioner + GenEO for small and large eigenvalues 
+#TODO fix this test
+#localksp = PETSc.KSP().create()                                                                    
+#diagofAlocal = asm.A_mpiaij_local.copy()
+#diagofAlocal.zeroEntries()
+#diagofAlocal.setDiagonal(asm.A_mpiaij_local.getDiagonal())
+#localksp.setOperators(diagofAlocal)
+#localksp.setOptionsPrefix("myasm_")                                                                   
+#localksp.setType('preonly')                                                                           
+#localpc = localksp.getPC()
+#localpc.setType('cholesky')
+#localpc.setFactorSolverType('mumps')  
+#asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 1)
 
 # Set initial guess
 xtild = asm.proj.xcoarse(b)
@@ -60,9 +86,15 @@ x *= xnorm
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
-ksp.setType(ksp.Type.PYTHON)
-ksp.setPythonContext(KSP_MPCG(asm))
+ksp.setType('cg')
+
+ksp.pc.setType(ksp.pc.Type.PYTHON)
+ksp.pc.setPythonContext(asm)
+ksp.setUp()
+
 ksp.setInitialGuessNonzero(True)
+
+ksp.setFromOptions()
 
 ksp.solve(b, x)
 
