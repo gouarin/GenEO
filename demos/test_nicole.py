@@ -48,10 +48,10 @@ bcApplyWest(da, A, b)
 
 asm = deflated_ASM(A)
 #test number 1: BNN+GenEO for large eigenvalues (default)
-asm.setup_preconditioners()
+#asm.setup_preconditioners()
 
 ##test number 2: classical Additive Schwarz + GenEO for small eigenvalues 
-#localksp = PETSc.KSP().create()                                                                    
+#localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)                                                                    
 #localksp.setOperators(asm.A_mpiaij_local) 
 #localksp.setOptionsPrefix("myasm_")                                                                   
 #localksp.setType('preonly')                                                                           
@@ -60,19 +60,29 @@ asm.setup_preconditioners()
 #localpc.setFactorSolverType('mumps')  
 #asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.)
 
-###test number 3: diagonal preconditioner + GenEO for small and large eigenvalues 
-#TODO fix this test
-#localksp = PETSc.KSP().create()                                                                    
+###test number 3: diagonal preconditioner + GenEO for small and large eigenvalues
+# the coarse space consists of vectors coming from GenEO for the small eigenvalues. The threshold tauGenEO_lambdamin is not reached: all converged eigenvectors are used for the coarse space 
+#localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)                                                                    
 #diagofAlocal = asm.A_mpiaij_local.copy()
 #diagofAlocal.zeroEntries()
 #diagofAlocal.setDiagonal(asm.A_mpiaij_local.getDiagonal())
 #localksp.setOperators(diagofAlocal)
-#localksp.setOptionsPrefix("myasm_")                                                                   
 #localksp.setType('preonly')                                                                           
 #localpc = localksp.getPC()
 #localpc.setType('cholesky')
 #localpc.setFactorSolverType('mumps')  
-#asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 1)
+#asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.1)
+
+#######test number 4: ilu preconditioner + GenEO for small and large eigenvalues 
+localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)                                                                    
+diagofAlocal = asm.A_mpiaij_local.copy()
+diagofAlocal.zeroEntries()
+diagofAlocal.setDiagonal(asm.A_mpiaij_local.getDiagonal())
+localksp.setOperators(diagofAlocal)
+localksp.setType('preonly')                                                                           
+localpc = localksp.getPC()
+localpc.setType('icc')
+asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.1)
 
 # Set initial guess
 xtild = asm.proj.xcoarse(b)

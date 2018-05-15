@@ -50,7 +50,7 @@ class ASM(object):
         self.A = A
 
         # build local solvers
-        self.ksp = PETSc.KSP().create()
+        self.ksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
         self.ksp.setOperators(A)
         self.ksp.setOptionsPrefix("myasm_")
         self.ksp.setType('preonly')
@@ -110,7 +110,7 @@ class MP_ASM(object):
         Alocal = A_scaled
 
         # build local solvers
-        self.ksp = PETSc.KSP().create()
+        self.ksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
         self.ksp.setOperators(Alocal)
         self.ksp.setOptionsPrefix("myasm_")
         self.ksp.setType('preonly')
@@ -172,9 +172,9 @@ class deflated_ASM(object):
 
         #The default local solver is Neumann-Neumann
         Alocal = A_scaled
-        self.localksp = PETSc.KSP().create()
+        self.localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
         self.localksp.setOperators(Alocal)
-        self.localksp.setOptionsPrefix("myasm_")
+        self.localksp.setOptionsPrefix("localsolver_")
         self.localksp.setType('preonly')
         localpc = self.localksp.getPC()
         localpc.setType('cholesky')
@@ -187,12 +187,11 @@ class deflated_ASM(object):
         self.workl_2 = self.workl_1.copy()
         self.scatter_l2g = PETSc.Scatter().create(vlocal, None, vglobal, is_A)
 
-    def setup_preconditioners(self,newlocalksp=None, GenEO=1, tauGenEO_lambdamin = 0., tauGenEO_lambdamax = 0.1):
+    def setup_preconditioners(self, newlocalksp=None, GenEO=1, tauGenEO_lambdamin = 0., tauGenEO_lambdamax = 0.1):
         if newlocalksp:
             self.localksp = newlocalksp
             print('the local ksp has been changed')
         self.proj = newprojection(self,GenEO, tauGenEO_lambdamin, tauGenEO_lambdamax)
-
 
     def MP_mult(self, x, y):
         self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)

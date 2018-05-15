@@ -40,35 +40,31 @@ class newprojection:
             rbm_vecs = []
             nrb = 0
 
-        print(f"I am subdomain number {mpi.COMM_WORLD.rank} and the dimension of the kernel of my local solver is  {nrb}")
+        print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {nrb} coarse vectors as zero energy modes of local solver")
         # Add the GenEO coarse vectors
         if GenEO and tauGenEO_lambdamax > 0:
-            #Eigenvalue Problem for smallest eigenvalues
             eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
             eps.setDimensions(nev=10)
 
             eps.setProblemType(SLEPc.EPS.ProblemType.GHIEP)
             eps.setOperators(Alocal , self.A_mpiaij_local )
-            #eps.setWhichEigenpairs(SLEPc.EPS.Which.SMALLEST_REAL)
             eps.setWhichEigenpairs(SLEPc.EPS.Which.TARGET_REAL)
             eps.setTarget(0.)
-            if nrb > 0 :
+            eps.setFromOptions()
+            if nrb > 0 :#TODO: this attaches a null space to the ksp, is this a problem ?
                 eps.setDeflationSpace(rbm_vecs)
             ST = eps.getST()
             ST.setType("sinvert") 
-#TODO: use the factorization already computed by mumps. The following line works fine here but some parameter in the ksp must be changed because the next call to ksp.solve in precond.mult produces an error
 #            ST.setKSP(ksp)
-#TODO turn off eps.setpurify
-            eps.setFromOptions()
-#            eps.view()
             eps.solve()
 #            print(mpi.COMM_WORLD.rank, eps.getConverged())
             for i in range(eps.getConverged()):
                 if(abs(eps.getEigenvalue(i))<tauGenEO_lambdamax): #TODO tell slepc that the eigenvalues are real
                    rbm_vecs.append(workl.duplicate())
                    eps.getEigenvector(i,rbm_vecs[-1])
-#                print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))
-        print(f"I am subdomain number {mpi.COMM_WORLD.rank} and after first GenEO, I have contributed {len(rbm_vecs)} vectors to the coarse space")
+                #print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))
+        print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {len(rbm_vecs)} coarse vectors after first GenEO")
+
         if GenEO and tauGenEO_lambdamin > 0:
             #to compute the smallest eigenvalues of the preconditioned matrix, A_scaled must be factorized
 
@@ -81,6 +77,7 @@ class newprojection:
             eps.setWhichEigenpairs(SLEPc.EPS.Which.TARGET_REAL)
             eps.setTarget(0.)
             ST = eps.getST()
+
             ST.setType("sinvert") 
             STksp = ST.getKSP()
             STksp.setOperators(self.A_scaled)
@@ -103,8 +100,7 @@ class newprojection:
                 STksp.solve(rbm_vecs[-1], rbm_vecs[-1])
             
             ST_F.setMumpsIcntl(25, 0)
-            print(f"I am subdomain number {mpi.COMM_WORLD.rank} and STnrb = {STnrb}")
-
+            print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {STnrb} coarse vectors as zero energy modes of local operator")
 
             if len(rbm_vecs) > 0 :
                 eps.setDeflationSpace(rbm_vecs)
@@ -114,10 +110,10 @@ class newprojection:
                 if(abs(eps.getEigenvalue(i))<tauGenEO_lambdamin): #TODO tell slepc that the eigenvalues are real
                    rbm_vecs.append(workl.duplicate())
                    eps.getEigenvector(i,rbm_vecs[-1])
-#                print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))
+                #print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))
 
         ncoarse = len(rbm_vecs)
-        print(f"I am subdomain number {mpi.COMM_WORLD.rank} and I contribute {ncoarse} vectors to the coarse space")
+        print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {ncoarse} coarse vectors in total")
 
         coarse_vecs= []
         for i in range(mpi.COMM_WORLD.size):
