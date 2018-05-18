@@ -8,7 +8,6 @@ from elasticity import *
 
 def rhs(coords, rhs):
     n = rhs.shape
-    #rand = np.random.random(n[:-1])
     rhs[..., 1] = -9.81# + rand
 
 OptDB = PETSc.Options()
@@ -46,61 +45,50 @@ A.assemble()
 
 bcApplyWest(da, A, b)
 
-asm = deflated_ASM(A)
 #test number 1: BNN+GenEO for large eigenvalues (default)
-#asm.setup_preconditioners()
+pcbnn = PCBNN(A)
 
 ##test number 2: classical Additive Schwarz + GenEO for small eigenvalues 
+#r, _ = A.getLGMap()
+#is_A = PETSc.IS().createGeneral(r.indices)
+#A_mpiaij = A.convertISToAIJ()
+#A_mpiaij_local = A_mpiaij.createSubMatrices(is_A)[0]
 #localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)                                                                    
-#localksp.setOperators(asm.A_mpiaij_local) 
-#localksp.setOptionsPrefix("myasm_")                                                                   
+#localksp.setOperators(A_mpiaij_local) 
 #localksp.setType('preonly')                                                                           
 #localpc = localksp.getPC()
 #localpc.setType('cholesky')
 #localpc.setFactorSolverType('mumps')  
-#asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.)
+#pcbnn = PCBNN(A,newlocalksp=localksp)
 
-###test number 3: diagonal preconditioner + GenEO for small and large eigenvalues
-# the coarse space consists of vectors coming from GenEO for the small eigenvalues. The threshold tauGenEO_lambdamin is not reached: all converged eigenvectors are used for the coarse space 
+####test number 3: diagonal preconditioner + GenEO for small and large eigenvalues
+## the coarse space consists of vectors coming from GenEO for the small eigenvalues. The threshold tauGenEO_lambdamin is not reached: all converged eigenvectors are used for the coarse space 
 #localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)                                                                    
-#diagofAlocal = asm.A_mpiaij_local.copy()
+#diagofAlocal = pcbnn.A_mpiaij_local.copy()
 #diagofAlocal.zeroEntries()
-#diagofAlocal.setDiagonal(asm.A_mpiaij_local.getDiagonal())
+#diagofAlocal.setDiagonal(pcbnn.A_mpiaij_local.getDiagonal())
 #localksp.setOperators(diagofAlocal)
 #localksp.setType('preonly')                                                                           
 #localpc = localksp.getPC()
 #localpc.setType('cholesky')
 #localpc.setFactorSolverType('mumps')  
-#asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.1)
+#pcb.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.1)
 
-#######test number 4: ilu preconditioner + GenEO for small and large eigenvalues 
-localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)                                                                    
-diagofAlocal = asm.A_mpiaij_local.copy()
-diagofAlocal.zeroEntries()
-diagofAlocal.setDiagonal(asm.A_mpiaij_local.getDiagonal())
-localksp.setOperators(diagofAlocal)
-localksp.setType('preonly')                                                                           
-localpc = localksp.getPC()
-localpc.setType('icc')
-asm.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.1)
 
 # Set initial guess
-xtild = asm.proj.xcoarse(b)
+xtild = pcbnn.proj.xcoarse(b)
 bcopy = b.copy()
 b -= A*xtild
 
 x.setRandom()
-asm.proj.project(x)
+pcbnn.proj.project(x)
 xnorm = b.dot(x)/x.dot(A*x)
 x *= xnorm
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
-ksp.setType('cg')
-
-ksp.pc.setType(ksp.pc.Type.PYTHON)
-ksp.pc.setPythonContext(asm)
-ksp.setUp()
+ksp.setType(ksp.Type.PYTHON)
+ksp.setPythonContext(KSP_MPCG(pcbnn))
 
 ksp.setInitialGuessNonzero(True)
 

@@ -40,55 +40,10 @@ class MyKSP(object):
             ksp.setConvergedReason(reason)
         return reason
 
-class KSP_PCG(MyKSP):
-
-    def setUp(self, ksp):
-        super(KSP_PCG, self).setUp(ksp)
-        p = self.work[0].duplicate()
-        Ap = p.duplicate()
-        self.work += [p, Ap]
-
-    def solve(self, ksp, b, x):
-        A, B = ksp.getOperators()
-        P = ksp.getPC()
-        r, z, p, Ap = self.work
-        #
-        A.mult(x, r)
-        r.aypx(-1, b)
-        
-        P.apply(r, z)
-
-        z.copy(p)
-        delta_0 = r.dot(z)
-        delta = delta_0
-
-        ite = 0
-        if mpi.COMM_WORLD.rank == 0:
-            print(f'ite: {ite} residual -> {delta}')
-        
-        while not self.loop(ksp, r):
-            A.mult(p, Ap)
-            alpha = delta / p.dot(Ap)
-            x.axpy(+alpha, p)
-            r.axpy(-alpha, Ap)
-
-            P.apply(r, z)
-
-            delta_old = delta
-            delta = r.dot(z)
-            beta = delta / delta_old
-            p.aypx(beta, z)
-
-            ite += 1
-            if mpi.COMM_WORLD.rank == 0:
-                print(f'ite: {ite} residual -> {delta}')
-
-
 class KSP_MPCG(MyKSP):
 
-    def __init__(self, P, tol=.1):
+    def __init__(self, P):
         self.P = P
-        self.tol = tol
 
     def add_vectors(self):
         return [self.work[0].duplicate() for i in range(self.ndom)]
@@ -114,6 +69,9 @@ class KSP_MPCG(MyKSP):
         self.ksp_Delta = []
 
     def solve(self, ksp, b, x):
+        OptDB = PETSc.Options()
+        self.tau = OptDB.getReal('MPCG_tau', 0.1) #threshold in the tau-test. If infinite: full MPCG. If 0: classical PCG. 
+        self.MPinitit = OptDB.getBool('MPCG_MPinitit', True) #multiprecondition iteration zero (default) or use classical precondiitoning
         A, B = ksp.getOperators()
         r, z, p, Ap = self.work
         #
@@ -133,7 +91,15 @@ class KSP_MPCG(MyKSP):
         if mpi.COMM_WORLD.rank == 0:
             print(f'ite: {its} residual -> {rnorm}')
 
-        self.P.MP_mult(r, p[-1])
+        if self.MPinitit :
+            if mpi.COMM_WORLD.rank == 0:
+                print('multipreconditioning initial iteration')
+            self.P.MP_mult(r, p[-1])
+        else:
+            if mpi.COMM_WORLD.rank == 0:
+                print('not multipreconditioning initial iteration')
+            self.P.mult(r, z)
+            p[-1] = z.copy()
 
         alpha = self.gamma.duplicate()
         beta = self.gamma.duplicate()
@@ -182,7 +148,7 @@ class KSP_MPCG(MyKSP):
 
             its = ksp.getIterationNumber()
 
-            if ti < self.tol:
+            if ti < self.tau:
                 if mpi.COMM_WORLD.rank == 0:
                     print('multipreconditioning this iteration')
                 p.append(self.add_vectors())
@@ -264,3 +230,48 @@ def cg(A, b, rtol=1e-5, ite_max=5000):
             print(f'ite: {ite} residual -> {rnorm}')
 
     return x
+
+class KSP_PCG(MyKSP):
+
+    def setUp(self, ksp):
+        super(KSP_PCG, self).setUp(ksp)
+        p = self.work[0].duplicate()
+        Ap = p.duplicate()
+        self.work += [p, Ap]
+
+    def solve(self, ksp, b, x):
+        A, B = ksp.getOperators()
+        P = ksp.getPC()
+        r, z, p, Ap = self.work
+        #
+        A.mult(x, r)
+        r.aypx(-1, b)
+        
+        P.apply(r, z)
+
+        z.copy(p)
+        delta_0 = r.dot(z)
+        delta = delta_0
+
+        ite = 0
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'ite: {ite} residual -> {delta}')
+        
+        while not self.loop(ksp, r):
+            A.mult(p, Ap)
+            alpha = delta / p.dot(Ap)
+            x.axpy(+alpha, p)
+            r.axpy(-alpha, Ap)
+
+            P.apply(r, z)
+
+            delta_old = delta
+            delta = r.dot(z)
+            beta = delta / delta_old
+            p.aypx(beta, z)
+
+            ite += 1
+            if mpi.COMM_WORLD.rank == 0:
+                print(f'ite: {ite} residual -> {delta}')
+
+
