@@ -45,38 +45,11 @@ A.assemble()
 
 bcApplyWest(da, A, b)
 
-#test number 1: BNN+GenEO for large eigenvalues (default)
+#Setup the preconditioner (or multipreconditioner) and the coarse space
 pcbnn = PCBNN(A)
 
-##test number 2: classical Additive Schwarz + GenEO for small eigenvalues 
-#r, _ = A.getLGMap()
-#is_A = PETSc.IS().createGeneral(r.indices)
-#A_mpiaij = A.convertISToAIJ()
-#A_mpiaij_local = A_mpiaij.createSubMatrices(is_A)[0]
-#localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)                                                                    
-#localksp.setOperators(A_mpiaij_local) 
-#localksp.setType('preonly')                                                                           
-#localpc = localksp.getPC()
-#localpc.setType('cholesky')
-#localpc.setFactorSolverType('mumps')  
-#pcbnn = PCBNN(A,newlocalksp=localksp)
-
-####test number 3: diagonal preconditioner + GenEO for small and large eigenvalues
-## the coarse space consists of vectors coming from GenEO for the small eigenvalues. The threshold tauGenEO_lambdamin is not reached: all converged eigenvectors are used for the coarse space 
-#localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)                                                                    
-#diagofAlocal = pcbnn.A_mpiaij_local.copy()
-#diagofAlocal.zeroEntries()
-#diagofAlocal.setDiagonal(pcbnn.A_mpiaij_local.getDiagonal())
-#localksp.setOperators(diagofAlocal)
-#localksp.setType('preonly')                                                                           
-#localpc = localksp.getPC()
-#localpc.setType('cholesky')
-#localpc.setFactorSolverType('mumps')  
-#pcb.setup_preconditioners(newlocalksp=localksp,GenEO=1,tauGenEO_lambdamin = 0.1, tauGenEO_lambdamax = 0.1)
-
-
 # Set initial guess
-xtild = pcbnn.proj.xcoarse(b)
+xtild = pcbnn.proj.coarse_init(b)
 bcopy = b.copy()
 b -= A*xtild
 
@@ -88,7 +61,7 @@ x *= xnorm
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
 ksp.setType(ksp.Type.PYTHON)
-ksp.setPythonContext(KSP_MPCG(pcbnn))
+ksp.setPythonContext(KSP_AMPCG(pcbnn))
 
 ksp.setInitialGuessNonzero(True)
 

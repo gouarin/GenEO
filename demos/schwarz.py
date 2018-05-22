@@ -107,7 +107,7 @@ P.setPythonContext(asm)
 P.setUp()
 
 # Set initial guess
-xtild = proj.xcoarse(b)
+xtild = proj.coarse_init(b)
 
 # ptilde = da.createGlobalVec()
 # for i in range(len(vecs)):

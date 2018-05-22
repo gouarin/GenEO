@@ -55,7 +55,7 @@ P.setPythonContext(asm)
 P.setUp()
 
 # Set initial guess
-xtild = proj.xcoarse(b)
+xtild = proj.coarse_init(b)
 bcopy = b.copy()
 b -= A*xtild
 

@@ -6,13 +6,53 @@ from slepc4py import SLEPc
 
 class projection(object):
     def __init__(self,PCBNN): 
+        """
+        Initialize the coarse space and corresponding projection preconditioner and other coarse operators. 
+        The default coarse space is the kernel of the local operators if these have been factorized 
+        with MUMPS and no coarse space otherwise. 
+
+        Parameters
+        ==========
+
+        PETSc.Options
+        =======
+
+        PCBNN_GenEO : Bool
+            Default is True. 
+            If True then the coarse space is enriched by solving local generalized eigenvalue problems. 
+ 
+        PCBNN_GenEO_eigmin : Real
+            Default is 0.1.
+            Target for the smallest eigenvalue (eigmin) of the preconditioned operator. This sets the threshold for selecting which eigenvectors from the local generalized eigenvalue problems are selected for the coarse space. There are three cases where we do NOT solve an eigenvalue problem for eigmin:
+                - if GenEO = False.
+                - if PCBNN_GenEO_eigmin = 0.
+                - if PCBNN_switchtoASM = False (this is the case by default) then the preconditioner is BNN and it is already known that eigmin >= 1. In this case the value of PCBNN_GenEO_eigmin is ignored. 
+
+        PCBNN_GenEO_eigmax : Real
+            Default is 10.
+            Target for the largest eigenvalue (eigmax) of the preconditioned operator. This sets the threshold for selecting which eigenvectors from the local generalized eigenvalue problems are selected for the coarse space. There are three cases where we do NOT solve an eigenvalue problem for eigmin:
+                - if GenEO = False.
+                - if PCBNN_GenEO_eigmax = 0.
+                - if PCBNN_switchtoASM = True then the preconditioner is Additive Schwarz and it is already known that eigmax <= maximal multiplicity of a degree of freedom. In this case the value of PCBNN_GenEO_eigmax is ignored. 
+
+        PCBNN_GenEO_nev : Int
+            Default is 10 .
+            Number of eigenpairs requested during the eigensolves. This is an option passed to the eigensolver.
+
+        PCBNN_GenEO_maxev : Int
+            Default is 2*PCBNN_GenEO_nev.
+            Maximal number of eigenvectors from each eigenvalue problem that can be selected for the coarse space. This is relevant because if more eigenvalues than requested by PBNN_GenEO_nev have converged during the eigensolve then they are all returned so setting the value of PCBNN_GenEO_nev does not impose a limitation on the size of the coarse space.  
+
+        =======
+
+        self: FIX: Does this function return a projection object ? 
+        """
         OptDB = PETSc.Options()                                
-        self.nev = OptDB.getInt('PCBNN_GenEO_nev', 10) #for SLEPc: nb of desired eigenvectors to be computed
-        self.maxev = OptDB.getInt('PCBNN_GenEO_maxev', 2*self.nev) #max number of eigenvectors allowed to be selected (sometimes SLEPc returns more converged eigenvalues than requested by PCBNN_GenEO_nev)
-#        self.condmax = OptDB.getReal('PCBNN_GenEO_condmax', 100)
-        self.eigmax = OptDB.getReal('PCBNN_GenEO_eigmax', 10)
         self.GenEO = OptDB.getBool('PCBNN_GenEO', True)
+        self.eigmax = OptDB.getReal('PCBNN_GenEO_eigmax', 10)
         self.eigmin = OptDB.getReal('PCBNN_GenEO_eigmin', 0.1)
+        self.nev = OptDB.getInt('PCBNN_GenEO_nev', 10) 
+        self.maxev = OptDB.getInt('PCBNN_GenEO_maxev', 2*self.nev) 
 
         vglobal, _ = PCBNN.A.getVecs()
         vlocal, _ = PCBNN.A_scaled.getVecs()
@@ -21,6 +61,7 @@ class projection(object):
         self.A = PCBNN.A
         self.A_scaled = PCBNN.A_scaled
         self.A_mpiaij_local = PCBNN.A_mpiaij_local
+        self.verbose = PCBNN.verbose
 
         workl, _ = self.A_scaled.getVecs()
         self.workl = workl
@@ -46,7 +87,8 @@ class projection(object):
                 self.ksp.solve(rbm_vecs[i], rbm_vecs[i])
             
             F.setMumpsIcntl(25, 0)
-            print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {nrb} coarse vectors as zero energy modes of local solver")
+            if self.verbose:
+                print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {nrb} coarse vectors as zero energy modes of local solver")
         else:
             rbm_vecs = []
             nrb = 0
@@ -62,11 +104,13 @@ class projection(object):
             if self.Alocal != self.A_mpiaij_local:
                 self.solve_GenEO_eigmax(rbm_vecs, tau_eigmax)
             else:
-                print(f'This is classical additive Schwarz so eigmax = {PCBNN.mult_max}, no eigenvalue problem will be solved for eigmax')
+                if self.verbose and mpi.COMM_WORLD.rank == 0:
+                    print(f'This is classical additive Schwarz so eigmax = {PCBNN.mult_max}, no eigenvalue problem will be solved for eigmax')
             if self.Alocal != self.A_scaled:
                 self.solve_GenEO_eigmin(rbm_vecs, tau_eigmin)
             else:
-                print('This is BNN so eigmin = 1, no eigenvalue problem will be solved for eigmin')
+                if self.verbose and mpi.COMM_WORLD.rank == 0:
+                    print('This is BNN so eigmin = 1, no eigenvalue problem will be solved for eigmin')
 
         coarse_vecs, coarse_Avecs, Delta, ksp_Delta = self.assemble_coarse_operators(rbm_vecs)
 
@@ -81,6 +125,20 @@ class projection(object):
         self.gamma_tmp = self.gamma.duplicate()
 
     def solve_GenEO_eigmax(self, rbm_vecs, tauGenEO_eigmax):
+        """
+        Solves the local GenEO eigenvalue problem related to the largest eigenvalue eigmax. 
+
+        Parameters
+        ==========
+        self: 
+            
+        rbm_vecs : list of local PETSc .vecs
+            rbm_vecs may already contain some local coarse vectors. This routine will possibly add more vectors to the list.
+
+        tauGenEO_eigmax: Real.
+            Threshold for selecting eigenvectors for the coarse space.
+
+        """
         if tauGenEO_eigmax > 0:
             eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
             eps.setDimensions(nev=self.nev)
@@ -101,11 +159,31 @@ class projection(object):
                 if(abs(eps.getEigenvalue(i))<tauGenEO_eigmax): #TODO tell slepc that the eigenvalues are real
                     rbm_vecs.append(self.workl.duplicate())
                     eps.getEigenvector(i,rbm_vecs[-1])
-                #print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))        
-            self.eps_eigmin=eps #TODO FIX the only reason for this line is to make sure self.ksp and hence PCBNN.ksp is not destroyed  
-        print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {len(rbm_vecs)} coarse vectors after first GenEO")
+                    if self.verbose:
+                        print(f'GenEO eigenvalue number {i} for lambdamax in subdomain {mpi.COMM_WORLD.rank}: {eps.getEigenvalue(i)}')
+                else:
+                    if self.verbose:
+                        print(f'GenEO eigenvalue number {i} for lambdamax in subdomain {mpi.COMM_WORLD.rank}: {eps.getEigenvalue(i)} <-- not selected (> {tauGenEO_eigmax})')
+
+            self.eps_eigmax=eps #TODO FIX the only reason for this line is to make sure self.ksp and hence PCBNN.ksp is not destroyed  
+        if self.verbose:
+            print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {len(rbm_vecs)} coarse vectors after first GenEO")
     
     def solve_GenEO_eigmin(self, rbm_vecs, tauGenEO_eigmin):
+        """
+        Solves the local GenEO eigenvalue problem related to the smallest eigenvalue eigmin. 
+
+        Parameters
+        ==========
+        self: 
+            
+        rbm_vecs : list of local PETSc .vecs
+            rbm_vecs may already contain some local coarse vectors. This routine will possibly add more vectors to the list.
+
+        tauGenEO_eigmin: Real.
+            Threshold for selecting eigenvectors for the coarse space.
+
+        """
         if tauGenEO_eigmin > 0:
             #to compute the smallest eigenvalues of the preconditioned matrix, A_scaled must be factorized
             tempksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -129,7 +207,8 @@ class projection(object):
                 tempksp.solve(rbm_vecs[-1], rbm_vecs[-1])
             
             tempF.setMumpsIcntl(25, 0)
-            print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {tempnrb} coarse vectors as zero energy modes of local operator")
+            if self.verbose:
+                print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {tempnrb} coarse vectors as zero energy modes of local operator")
 
             #Eigenvalue Problem for smallest eigenvalues
             eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
@@ -153,15 +232,43 @@ class projection(object):
                 if(abs(eps.getEigenvalue(i))<tauGenEO_eigmin): #TODO tell slepc that the eigenvalues are real
                    rbm_vecs.append(self.workl.duplicate())
                    eps.getEigenvector(i,rbm_vecs[-1])
+                   if self.verbose:
+                       print(f'GenEO eigenvalue number {i} for lambdamin in subdomain {mpi.COMM_WORLD.rank}: {eps.getEigenvalue(i)}')
+                else:
+                    if self.verbose:
+                        print(f'GenEO eigenvalue number {i} for lambdamin in subdomain {mpi.COMM_WORLD.rank}: {eps.getEigenvalue(i)} <-- not selected (> {tauGenEO_eigmin})')
                 #print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))        
-            self.eps_eigmax=eps #the only reason for this line is to make sure self.ksp and hence PCBNN.ksp is not destroyed  
+            self.eps_eigmin=eps #the only reason for this line is to make sure self.ksp and hence PCBNN.ksp is not destroyed  
 
     def assemble_coarse_operators(self,rbm_vecs):
-        #coarse_vecs is a list of the local contributions to the coarse space: coarse_vecs[i] is either a local vector or None if coarse vector number i belongs to another subdomain
-        #the vectors in coarse_vecs have been scaled so that their A-norm is 1
-        #coarse_Avecs is a list of the global vectors: A*coarse_vecs
-        #Delta is the matrix of the coarse problem. As a result of the scaling of the coarse vectors, its diagonal is 1
-        print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {len(rbm_vecs)} coarse vectors in total")
+        """
+        Assembles the coarse operators from a list of local contributions to the coarse space.  
+
+        Parameters
+        ==========
+
+        self: FIX 
+            
+        rbm_vecs : list of local PETSc .vecs
+           list of the coarse vectors contributed by the subdomain. 
+
+        Returns
+        ==========
+
+            coarse_vecs : list of local vectors or None ? FIX 
+                list of the local contributions to the coarse space numbered globally: coarse_vecs[i] is either a scaled local vector from rbm_vecs or None if coarse vector number i belongs to another subdomain. The scaling that is applied to the coarse vectors ensures that their A-norm is 1.
+
+            coarse_Avecs : list of global PETSc.Vecs
+                list of the A*coarse_vecs[i]. These are global vectors so not in the same format as the vectors in coarse_vecs. 
+            Delta : PETSc.Mat (local)
+                matrix of the coarse problem. As a result of the scaling of the coarse vectors, its diagonal is 1. This matrix is duplicated over all subdomains This matrix is duplicated over all subdomains
+
+            ksp_Delta : PETSc.ksp 
+               Krylov subspace solver for the coarse problem matrix Delta.
+
+        """
+        if self.verbose:
+            print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {len(rbm_vecs)} coarse vectors in total")
 
         coarse_vecs = []
         for i in range(mpi.COMM_WORLD.size):
@@ -188,6 +295,9 @@ class projection(object):
             work.set(0)
             self.scatter_l2g(self.workl, work, PETSc.InsertMode.ADD_VALUES)
             coarse_Avecs[-1] = self.A*work
+ 
+        if mpi.COMM_WORLD.rank == 0:
+            print(f"There are {len(coarse_vecs)} vectors in the coarse space.")
 
         #Define, fill and factorize coarse problem matrix
         Delta = PETSc.Mat().create(comm=PETSc.COMM_SELF)
@@ -217,6 +327,18 @@ class projection(object):
 
 
     def project(self, x):
+        """
+        Applies the coarse projection (or projection preconditioner) to x 
+
+        Parameters
+        ==========
+
+        self: FIX 
+            
+        x : PETSc.Vec
+           Vector to which the projection is applied and in which the result is stored. 
+
+        """
         alpha = self.gamma.duplicate()
         for i, Avec in enumerate(self.coarse_Avecs):
             self.gamma[i] = Avec.dot(x)
@@ -230,7 +352,25 @@ class projection(object):
 
         self.scatter_l2g(self.workl, x, PETSc.InsertMode.ADD_VALUES)
 
-    def xcoarse(self, rhs): #a better name would be coarsesolve
+    def coarse_init(self, rhs): 
+        """
+        Initialize the projected PCG algorithm or MPCG algorithm with the solution of the problem in the coarse space.  
+
+        Parameters
+        ==========
+
+        self: FIX 
+            
+        rhs : PETSc.Vec
+           Right hand side vector for which to initialize the problem. 
+
+        Returns
+        ==========
+        out : PETSc.Vec
+           Solution of the problem projected into the coarse space for the initialization of a projected Krylov subspace solver. 
+
+        """
+
         alpha = self.gamma.duplicate()
 
         self.scatter_l2g(rhs, self.workl, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
@@ -255,6 +395,18 @@ class projection(object):
         return out
 
     def project_transpose(self, x):
+        """
+        Applies the transpose of the coarse projection (which is also a projection) to x 
+
+        Parameters
+        ==========
+
+        self: FIX 
+            
+        x : PETSc.Vec
+           Vector to which the projection is applied and in which the result is stored. 
+
+        """
         alpha = self.gamma.duplicate()
 
         self.scatter_l2g(x, self.workl, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)

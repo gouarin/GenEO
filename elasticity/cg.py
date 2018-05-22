@@ -40,16 +40,77 @@ class MyKSP(object):
             ksp.setConvergedReason(reason)
         return reason
 
-class KSP_MPCG(MyKSP):
+class KSP_AMPCG(MyKSP):
+    def __init__(self, mpc):
+        """
+        Initialize the AMPCG (Adaptive Multipreconditioned Conjugate Gradient) solver. 
 
-    def __init__(self, P):
-        self.P = P
+        Parameters
+        ==========
+        self: 
+            
+        mpc : PCBNN Object FIX ?
+            the multipreconditioner.  
+
+        PETSc.Options
+        =======
+
+        AMPCG_fullMP : Bool
+            Default is False
+            If True then the algorithm performs only multipreconditioned iterations.
+
+        AMPCG_tau : Real
+            Default is 0.1
+            This is the threshold to choose automatically between a multipreconditioned iteration and a preconditioned iteration. This automatic choice based on AMPCG_tau is only relevant to `catch' large eigenvalues of the preconditioned operator (for theoretical reasons).
+            If AMPCG_tau = 0, the algorithm will always perform a preconditioned iteration, except possibly at initialization if the user changes AMPCG_MPinitit. 
+            If AMPCG_fullMP = True then the value of AMPCG_tau is discarded.
+
+        AMPCG_MPinitit : Bool
+            Default is (self.tau > 0)
+            If True then the initial iteration is multipreconditioned, otherwise it is preconditioned. By default, it is multipreconditioned unless AMPCG_tau = 0 in which case we know that all subsequent iterations will be preconditioned.
+            If AMPCG_fullMP = True then the value of AMPCG_MPinitit is discarded.
+
+        AMPCG_verbose : Bool
+            Default is False. 
+            If True, some information about the iterations is printed when the code is executed.
+    
+        """
+
+        OptDB = PETSc.Options()
+        self.tau = OptDB.getReal('AMPCG_tau', 0.1) 
+        self.MPinitit = OptDB.getBool('AMPCG_MPinitit', (self.tau>0)) 
+        self.fullMP = OptDB.getBool('AMPCG_fullMP', False) 
+        self.verbose = OptDB.getBool('AMPCG_verbose', False) 
+
+        self.mpc = mpc  
 
     def add_vectors(self):
+        """
+        Initialize a list of self.ndom global vectors that can be used to store the multipreconditioned residual.  
+
+        Parameters
+        ==========
+        self: 
+            
+        Returns 
+        =======
+
+            : list of self.ndom PETSc.Vecs
+        """
         return [self.work[0].duplicate() for i in range(self.ndom)]
 
     def setUp(self, ksp):
-        super(KSP_MPCG, self).setUp(ksp)
+        """
+        Setup of the AMPCG Krylov Subspace Solver.  
+
+        Parameters
+        ==========
+        self : FIX 
+
+        ksp : FIX
+            
+        """
+        super(KSP_AMPCG, self).setUp(ksp)
         self.ndom = mpi.COMM_WORLD.size
         # FIX: transform p and Ap using block matrices
         p = [self.add_vectors()]
@@ -69,36 +130,41 @@ class KSP_MPCG(MyKSP):
         self.ksp_Delta = []
 
     def solve(self, ksp, b, x):
-        OptDB = PETSc.Options()
-        self.tau = OptDB.getReal('MPCG_tau', 0.1) #threshold in the tau-test. If infinite: full MPCG. If 0: classical PCG. 
-        self.MPinitit = OptDB.getBool('MPCG_MPinitit', True) #multiprecondition iteration zero (default) or use classical precondiitoning
+        """
+        Solve of the AMPCG Krylov Subspace Solver.  
+
+        Parameters
+        ==========
+        self : FIX 
+
+        ksp : FIX
+            
+        b : PETSc Vec
+        The right hand side for which to solve. 
+
+        x : PETSc Vec
+        To store the solution. 
+
+        """
         A, B = ksp.getOperators()
         r, z, p, Ap = self.work
-        #
-
-        # x.setRandom()
-        # self.P.proj.project(x)
-        # bcApplyWest_vec(self.P.da_global, x)
-        # xnorm = b.dot(x)/x.dot(A*x)
-        # x *= xnorm
 
         A.mult(x, r)
         r.aypx(-1, b)
-        self.P.proj.project_transpose(r)
 
         rnorm = r.dot(r)
         its = 0
-        if mpi.COMM_WORLD.rank == 0:
+        if mpi.COMM_WORLD.rank == 0 and self.verbose :
             print(f'ite: {its} residual -> {rnorm}')
 
-        if self.MPinitit :
-            if mpi.COMM_WORLD.rank == 0:
+        if self.MPinitit or self.fullMP :
+            if mpi.COMM_WORLD.rank == 0 and self.verbose :
                 print('multipreconditioning initial iteration')
-            self.P.MP_mult(r, p[-1])
+            self.mpc.MP_mult(r, p[-1])
         else:
-            if mpi.COMM_WORLD.rank == 0:
+            if mpi.COMM_WORLD.rank == 0 and self.verbose :
                 print('not multipreconditioning initial iteration')
-            self.P.mult(r, z)
+            self.mpc.mult(r, z)
             p[-1] = z.copy()
 
         alpha = self.gamma.duplicate()
@@ -142,18 +208,18 @@ class KSP_MPCG(MyKSP):
 
                 ti = gamma0*alpha0
 
-            self.P.mult(r, z)
+            self.mpc.mult(r, z)
             rnorm = r.dot(z)
             ti /= rnorm
 
             its = ksp.getIterationNumber()
 
-            if ti < self.tau:
-                if mpi.COMM_WORLD.rank == 0:
+            if ti < self.tau or self.fullMP:
+                if mpi.COMM_WORLD.rank == 0 and self.verbose :
                     print('multipreconditioning this iteration')
                 p.append(self.add_vectors())
                 Ap.append(self.add_vectors())
-                self.P.MP_mult(r, p[-1])
+                self.mpc.MP_mult(r, p[-1])
             else:
                 p.append(z.copy())
                 Ap.append(z.duplicate())
@@ -185,11 +251,11 @@ class KSP_MPCG(MyKSP):
 
             if isinstance(p[-1], list):
                 for i in range(self.ndom):
-                    self.P.proj.project(p[-1][i])
+                    self.mpc.proj.project(p[-1][i])
             else:
-                self.P.proj.project(p[-1])
+                self.mpc.proj.project(p[-1])
 
-            if mpi.COMM_WORLD.rank == 0:
+            if mpi.COMM_WORLD.rank == 0 and self.verbose :
                 print(f'ite: {its} residual -> {rnorm} ti -> {ti}')
 
 def cg(A, b, rtol=1e-5, ite_max=5000):
