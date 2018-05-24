@@ -17,6 +17,10 @@ n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n)
 ny = OptDB.getInt('ny', Ly*n)
 nz = OptDB.getInt('nz', Lz*n)
+E1 = OptDB.getReal('E1', 10**6)
+E2 = OptDB.getReal('E2', 1)
+nu1 = OptDB.getReal('nu1', 0.4)
+nu2 = OptDB.getReal('nu2', 0.4)
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
@@ -27,10 +31,16 @@ da = PETSc.DMDA().create([nx, ny, nz], dof=3, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly, zmax=Lz)
 da.setMatType(PETSc.Mat.Type.IS)
 
-# constant young modulus
-E = 30000
-# constant Poisson coefficient
-nu = 0.4
+def lame_coeff(x, y, z, v1, v2):
+    output = np.empty(x.shape)
+    mask = np.logical_or(np.logical_and(.2<=z, z<=.4),np.logical_and(.6<=z, z<=.8))
+    output[mask] = v1
+    output[np.logical_not(mask)] = v2
+    return output
+
+# non constant Young's modulus and Poisson's ratio 
+E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2))
+nu = buildCellArrayWithFunction(da, lame_coeff, (nu1, nu2))
 
 lamb = (nu*E)/((1+nu)*(1-2*nu)) 
 mu = .5*E/(1+nu)
@@ -41,39 +51,26 @@ A = buildElasticityMatrix(da, h, lamb, mu)
 A.assemble()
 
 bcApplyWest(da, A, b)
+bcopy = b.copy()
 
-RBM = PETSc.NullSpace().createRigidBody(da.getCoordinates())
-rbm_vecs = RBM.getVecs()
-for rbm_vec in rbm_vecs:
-    bcApplyWest_vec(da, rbm_vec)
-
-#proj = projection(da, A, RBM)
-
-asm = MP_ASM(A)
-P = PETSc.Mat().createPython(
-    [x.getSizes(), b.getSizes()], comm=da.comm)
-P.setPythonContext(asm)
-P.setUp()
+pcbnn = PCBNN(A)
 
 # Set initial guess
-xtild = asm.proj.xcoarse(b)
-bcopy = b.copy()
+xtild = pcbnn.proj.coarse_init(b)
 b -= A*xtild
-
 x.setRandom()
-asm.proj.project(x)
-bcApplyWest_vec(da, x)
+pcbnn.proj.project(x)
 xnorm = b.dot(x)/x.dot(A*x)
 x *= xnorm
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
 ksp.setType(ksp.Type.PYTHON)
-ksp.setPythonContext(KSP_AMPCG(asm))
-ksp.setFromOptions()
+ksp.setPythonContext(KSP_AMPCG(pcbnn))
 
 ksp.setInitialGuessNonzero(True)
 
+ksp.setFromOptions()
 ksp.solve(b, x)
 
 # norm = (A*x-bcopy).norm()
