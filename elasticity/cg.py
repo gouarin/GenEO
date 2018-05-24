@@ -1,6 +1,6 @@
 from petsc4py import PETSc
 import mpi4py.MPI as mpi
-from math import sqrt
+from math import sqrt, inf
 from sys import getrefcount
 
 from .bc import bcApplyWest_vec
@@ -8,7 +8,7 @@ from .bc import bcApplyWest_vec
 class MyKSP(object):
 
     def __init__(self):
-        pass
+        self.callback = None
 
     def create(self, ksp):
         self.work = []
@@ -25,18 +25,32 @@ class MyKSP(object):
             v.destroy()
         del self.work[:]
 
-    def loop(self, ksp, rnorm):
+    def loop(self, ksp, r, z):
+        normType = ksp.getNormType()
+        if normType == PETSc.KSP.NormType.NORM_PRECONDITIONED:
+            norm = r.norm()
+        elif normType == PETSc.KSP.NormType.NORM_UNPRECONDITIONED:
+            norm = z.norm()
+        # FIX petsc4py to use it
+        #elif normType == PETSc.KSP.NormType.NORM_NATURAL:
+        #    norm = sqrt(r.dot(z))
+
         its = ksp.getIterationNumber()
-        ksp.setResidualNorm(rnorm)
-        ksp.logConvergenceHistory(rnorm)
+        ksp.setResidualNorm(norm)
+        ksp.logConvergenceHistory(norm)
+        ksp.monitor(its, norm)
 
-        ksp.monitor(its, rnorm)
+        context = ksp.getPythonContext()
+        comm = ksp.comm
+        if context.verbose:
+            PETSc.Sys.Print('\tnatural_norm -> {:10.8e}\n\tti -> {:10.8e}'.format(context.natural_norm[its], context.ti[its]), comm=comm)
 
-        reason = ksp.callConvergenceTest(its, rnorm)
+        reason = ksp.callConvergenceTest(its, norm)
         if not reason:
             ksp.setIterationNumber(its+1)
         else:
             ksp.setConvergedReason(reason)
+
         return reason
 
 class KSP_AMPCG(MyKSP):
@@ -81,7 +95,9 @@ class KSP_AMPCG(MyKSP):
         self.fullMP = OptDB.getBool('AMPCG_fullMP', False) 
         self.verbose = OptDB.getBool('AMPCG_verbose', False) 
 
-        self.mpc = mpc  
+        self.mpc = mpc
+        self.ti = []
+        self.natural_norm = []
 
     def add_vectors(self):
         """
@@ -140,32 +156,43 @@ class KSP_AMPCG(MyKSP):
             To store the solution. 
 
         """
+
+        self.mpc.proj.project(x)
+        xtild = self.mpc.proj.coarse_init(b)
+        x += xtild
+
         A, B = ksp.getOperators()
         r, z, p, Ap = self.work
+        comm = ksp.comm
 
         A.mult(x, r)
         r.aypx(-1, b)
+        self.mpc.mult(r, z)
 
-        rnorm = r.dot(r)
-        its = 0
-        if mpi.COMM_WORLD.rank == 0 and self.verbose :
-            print(f'ite: {its} residual -> {rnorm}')
+        natural_norm = sqrt(r.dot(z))
+        self.natural_norm.append(natural_norm)
+
+        its = ksp.getIterationNumber()
 
         if self.MPinitit or self.fullMP :
-            if mpi.COMM_WORLD.rank == 0 and self.verbose :
-                print('multipreconditioning initial iteration')
+            if self.verbose :
+                PETSc.Sys.Print('multipreconditioning initial iteration', comm=comm)
+            self.ti.append(0)
             self.mpc.MP_mult(r, p[-1])
         else:
-            if mpi.COMM_WORLD.rank == 0 and self.verbose :
-                print('not multipreconditioning initial iteration')
-            self.mpc.mult(r, z)
+            if self.verbose :
+                PETSc.Sys.Print('not multipreconditioning initial iteration', comm)
+            self.ti.append(inf)
             p[-1] = z.copy()
 
         alpha = self.gamma.duplicate()
         beta = self.gamma.duplicate()
         phi = self.gamma.duplicate()
-        
-        while not self.loop(ksp, rnorm):
+
+        if self.callback:
+            self.callback(locals())
+
+        while not self.loop(ksp, r, z):
             if isinstance(p[-1], list):
                 for i in range(self.ndom):
                     self.gamma[i] = p[-1][i].dot(r)
@@ -203,21 +230,27 @@ class KSP_AMPCG(MyKSP):
                 ti = gamma0*alpha0
 
             self.mpc.mult(r, z)
-            rnorm = r.dot(z)
-            ti /= rnorm
+            natural_norm = r.dot(z)
+            ti /= natural_norm
+            natural_norm = sqrt(natural_norm)
 
-            its = ksp.getIterationNumber()
+            self.natural_norm.append(natural_norm)
+            self.ti.append(ti)
 
             if ti < self.tau or self.fullMP:
-                if mpi.COMM_WORLD.rank == 0 and self.verbose :
-                    print('multipreconditioning this iteration')
+                if self.verbose :
+                    PETSc.Sys.Print('multipreconditioning this iteration', comm=comm)
                 p.append(self.add_vectors())
                 Ap.append(self.add_vectors())
                 self.mpc.MP_mult(r, p[-1])
             else:
                 p.append(z.copy())
                 Ap.append(z.duplicate())
-                
+
+            if self.callback:
+                self.callback(locals())
+
+            its = ksp.getIterationNumber()
             for it in range(its):
                 if isinstance(p[-1], list):
                     for i in range(self.ndom):
@@ -248,9 +281,6 @@ class KSP_AMPCG(MyKSP):
                     self.mpc.proj.project(p[-1][i])
             else:
                 self.mpc.proj.project(p[-1])
-
-            if mpi.COMM_WORLD.rank == 0 and self.verbose :
-                print(f'ite: {its} residual -> {rnorm} ti -> {ti}')
 
 def cg(A, b, rtol=1e-5, ite_max=5000):
     x = b.duplicate()

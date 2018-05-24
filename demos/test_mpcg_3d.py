@@ -31,6 +31,43 @@ da = PETSc.DMDA().create([nx, ny, nz], dof=3, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly, zmax=Lz)
 da.setMatType(PETSc.Mat.Type.IS)
 
+class callback:
+    def __init__(self, da):
+        self.da = da
+        ranges = da.getRanges()
+        ghost_ranges = da.getGhostRanges()
+        
+        self.slices = []
+        for r, gr in zip(ranges, ghost_ranges):
+            self.slices.append(slice(gr[0], r[1]))
+        self.slices = tuple(self.slices)
+
+        self.it = 0
+
+    def __call__(self, locals):
+        pyKSP = locals['self']
+        proj = pyKSP.mpc.proj
+
+
+        if self.it == 0:
+            work, _ = proj.A.getVecs()
+            for i, vec in enumerate(proj.coarse_vecs):
+                if vec:
+                    proj.workl = vec.copy()
+                else:
+                    proj.workl.set(0.)
+                work.set(0)
+                proj.scatter_l2g(proj.workl, work, PETSc.InsertMode.ADD_VALUES)
+
+                viewer = PETSc.Viewer().createVTK('coarse_vec_{}.vts'.format(i), 'w', comm = PETSc.COMM_WORLD)
+                tmp = self.da.createGlobalVec()
+                tmpl_a = self.da.getVecArray(tmp)
+                work_a = self.da.getVecArray(work)
+                tmpl_a[:] = work_a[:]
+                tmp.view(viewer)
+                viewer.destroy()
+            self.it += 1
+
 def lame_coeff(x, y, z, v1, v2):
     output = np.empty(x.shape)
     mask = np.logical_or(np.logical_and(.2<=z, z<=.4),np.logical_and(.6<=z, z<=.8))
@@ -56,17 +93,20 @@ bcopy = b.copy()
 pcbnn = PCBNN(A)
 
 # Set initial guess
-xtild = pcbnn.proj.coarse_init(b)
-b -= A*xtild
+# xtild = pcbnn.proj.coarse_init(b)
+# b -= A*xtild
 x.setRandom()
-pcbnn.proj.project(x)
+# pcbnn.proj.project(x)
 xnorm = b.dot(x)/x.dot(A*x)
 x *= xnorm
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
 ksp.setType(ksp.Type.PYTHON)
-ksp.setPythonContext(KSP_AMPCG(pcbnn))
+pyKSP = KSP_AMPCG(pcbnn)
+pyKSP.callback = callback(da)
+ksp.setPythonContext(pyKSP)
+ksp.setFromOptions()
 
 ksp.setInitialGuessNonzero(True)
 
@@ -77,7 +117,7 @@ ksp.solve(b, x)
 # if mpi.COMM_WORLD.rank == 0:
 #     print(norm)
 
-x += xtild
+# x += xtild
 viewer = PETSc.Viewer().createVTK('solution_3d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)
 

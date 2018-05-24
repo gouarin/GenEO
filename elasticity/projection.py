@@ -50,6 +50,7 @@ class projection(object):
         self.eigmin = OptDB.getReal('PCBNN_GenEO_eigmin', 0.1)
         self.nev = OptDB.getInt('PCBNN_GenEO_nev', 10) 
         self.maxev = OptDB.getInt('PCBNN_GenEO_maxev', 2*self.nev) 
+        self.comm = mpi.COMM_SELF
 
         vglobal, _ = PCBNN.A.getVecs()
         vlocal, _ = PCBNN.A_scaled.getVecs()
@@ -85,7 +86,7 @@ class projection(object):
             
             F.setMumpsIcntl(25, 0)
             if self.verbose:
-                print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {nrb} coarse vectors as zero energy modes of local solver")
+                PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of local solver'.format(mpi.COMM_WORLD.rank, nrb), comm=self.comm)
         else:
             rbm_vecs = []
             nrb = 0
@@ -101,13 +102,13 @@ class projection(object):
             if self.Alocal != self.A_mpiaij_local:
                 self.solve_GenEO_eigmax(rbm_vecs, tau_eigmax)
             else:
-                if self.verbose and mpi.COMM_WORLD.rank == 0:
-                    print(f'This is classical additive Schwarz so eigmax = {PCBNN.mult_max}, no eigenvalue problem will be solved for eigmax')
+                if self.verbose:
+                    PETSc.Sys.Print('This is classical additive Schwarz so eigmax = {}, no eigenvalue problem will be solved for eigmax'.format(PCBNN.mult_max), comm=mpi.COMM_WORLD)
             if self.Alocal != self.A_scaled:
                 self.solve_GenEO_eigmin(rbm_vecs, tau_eigmin)
             else:
-                if self.verbose and mpi.COMM_WORLD.rank == 0:
-                    print('This is BNN so eigmin = 1, no eigenvalue problem will be solved for eigmin')
+                if self.verbose:
+                    PETSc.Sys.Print('This is BNN so eigmin = 1, no eigenvalue problem will be solved for eigmin', comm=mpi.COMM_WORLD)
 
         coarse_vecs, coarse_Avecs, Delta, ksp_Delta = self.assemble_coarse_operators(rbm_vecs)
 
@@ -150,20 +151,20 @@ class projection(object):
             ST.setKSP(self.ksp) 
             eps.solve()
             if eps.getConverged() < self.nev:
-                print(f"WARNING: Only {eps.getConverged()} eigenvalues converged for GenEO_eigmax in subdomain {mpi.COMM_WORLD.rank} whereas {self.nev} were requested")
+                PETSc.Sys.Print('WARNING: Only {} eigenvalues converged for GenEO_eigmax in subdomain {} whereas {} were requested'.format(eps.getConverged(), mpi.COMM_WORLD.rank, self.nev), comm=self.comm)
             for i in range(min(eps.getConverged(),self.maxev)):
                 if(abs(eps.getEigenvalue(i))<tauGenEO_eigmax): #TODO tell slepc that the eigenvalues are real
                     rbm_vecs.append(self.workl.duplicate())
                     eps.getEigenvector(i,rbm_vecs[-1])
                     if self.verbose:
-                        print(f'GenEO eigenvalue number {i} for lambdamax in subdomain {mpi.COMM_WORLD.rank}: {eps.getEigenvalue(i)}')
+                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i)) , comm=self.comm)
                 else:
                     if self.verbose:
-                        print(f'GenEO eigenvalue number {i} for lambdamax in subdomain {mpi.COMM_WORLD.rank}: {eps.getEigenvalue(i)} <-- not selected (> {tauGenEO_eigmax})')
+                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i), tauGenEO_eigmax), comm=self.comm)
 
             self.eps_eigmax=eps #TODO FIX the only reason for this line is to make sure self.ksp and hence PCBNN.ksp is not destroyed  
         if self.verbose:
-            print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {len(rbm_vecs)} coarse vectors after first GenEO")
+            PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors after first GenEO'.format(mpi.COMM_WORLD.rank, len(rbm_vecs)), comm=self.comm)
     
     def solve_GenEO_eigmin(self, rbm_vecs, tauGenEO_eigmin):
         """
@@ -203,7 +204,7 @@ class projection(object):
             
             tempF.setMumpsIcntl(25, 0)
             if self.verbose:
-                print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {tempnrb} coarse vectors as zero energy modes of local operator")
+                PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of local operator'.format(mpi.COMM_WORLD.rank, tempnrb), comm=self.comm)
 
             #Eigenvalue Problem for smallest eigenvalues
             eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
@@ -222,17 +223,16 @@ class projection(object):
                 eps.setDeflationSpace(rbm_vecs)
             eps.solve()
             if eps.getConverged() < self.nev:
-                print(f"WARNING: Only {eps.getConverged()} eigenvalues converged for GenEO_eigmin in subdomain {mpi.COMM_WORLD.rank} whereas {self.nev} were requested")
+                PETSc.Sys.Print('WARNING: Only {} eigenvalues converged for GenEO_eigmin in subdomain {} whereas {} were requested'.format(eps.getConverged(), mpi.COMM_WORLD.rank, self.nev), comm=self.comm)
             for i in range(min(eps.getConverged(),self.maxev)):
                 if(abs(eps.getEigenvalue(i))<tauGenEO_eigmin): #TODO tell slepc that the eigenvalues are real
                    rbm_vecs.append(self.workl.duplicate())
                    eps.getEigenvector(i,rbm_vecs[-1])
                    if self.verbose:
-                       print(f'GenEO eigenvalue number {i} for lambdamin in subdomain {mpi.COMM_WORLD.rank}: {eps.getEigenvalue(i)}')
+                       PETSc.Sys.Print('GenEO eigenvalue number {i} for lambdamin in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i)), comm=self.comm)
                 else:
                     if self.verbose:
-                        print(f'GenEO eigenvalue number {i} for lambdamin in subdomain {mpi.COMM_WORLD.rank}: {eps.getEigenvalue(i)} <-- not selected (> {tauGenEO_eigmin})')
-                #print(mpi.COMM_WORLD.rank, eps.getEigenvalue(i))        
+                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i), tauGenEO_eigmin), comm=self.comm)
             self.eps_eigmin=eps #the only reason for this line is to make sure self.ksp and hence PCBNN.ksp is not destroyed  
 
     def assemble_coarse_operators(self,rbm_vecs):
@@ -262,7 +262,7 @@ class projection(object):
 
         """
         if self.verbose:
-            print(f"Subdomain number {mpi.COMM_WORLD.rank} contributes {len(rbm_vecs)} coarse vectors in total")
+            PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors in total'.format(mpi.COMM_WORLD.rank, len(rbm_vecs)), comm=self.comm)
 
         coarse_vecs = []
         for i in range(mpi.COMM_WORLD.size):
@@ -270,6 +270,7 @@ class projection(object):
             nrbl = mpi.COMM_WORLD.bcast(nrbl, root=i)
             for irbm in range(nrbl):
                 coarse_vecs.append(rbm_vecs[irbm] if i == mpi.COMM_WORLD.rank else None)
+
         coarse_Avecs = []
         work, _ = self.A.getVecs()
         for vec in coarse_vecs:
@@ -290,8 +291,7 @@ class projection(object):
             self.scatter_l2g(self.workl, work, PETSc.InsertMode.ADD_VALUES)
             coarse_Avecs[-1] = self.A*work
  
-        if mpi.COMM_WORLD.rank == 0:
-            print(f"There are {len(coarse_vecs)} vectors in the coarse space.")
+        PETSc.Sys.Print('There are {} vectors in the coarse space.'.format(len(coarse_vecs)), comm=mpi.COMM_WORLD)
 
         #Define, fill and factorize coarse problem matrix
         Delta = PETSc.Mat().create(comm=PETSc.COMM_SELF)
