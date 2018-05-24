@@ -181,7 +181,7 @@ class KSP_AMPCG(MyKSP):
             self.mpc.MP_mult(r, p[-1])
         else:
             if self.verbose :
-                PETSc.Sys.Print('not multipreconditioning initial iteration', comm)
+                PETSc.Sys.Print('not multipreconditioning initial iteration', comm=comm)
             self.ti.append(inf)
             p[-1] = z.copy()
 

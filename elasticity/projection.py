@@ -18,7 +18,7 @@ class projection(object):
         =============
 
         PCBNN_GenEO : Bool
-            Default is True. 
+            Default is False. 
             If True then the coarse space is enriched by solving local generalized eigenvalue problems. 
  
         PCBNN_GenEO_eigmin : Real
@@ -45,7 +45,7 @@ class projection(object):
 
         """
         OptDB = PETSc.Options()                                
-        self.GenEO = OptDB.getBool('PCBNN_GenEO', True)
+        self.GenEO = OptDB.getBool('PCBNN_GenEO', False)
         self.eigmax = OptDB.getReal('PCBNN_GenEO_eigmax', 10)
         self.eigmin = OptDB.getReal('PCBNN_GenEO_eigmin', 0.1)
         self.nev = OptDB.getInt('PCBNN_GenEO_nev', 10) 
@@ -152,6 +152,9 @@ class projection(object):
             eps.solve()
             if eps.getConverged() < self.nev:
                 PETSc.Sys.Print('WARNING: Only {} eigenvalues converged for GenEO_eigmax in subdomain {} whereas {} were requested'.format(eps.getConverged(), mpi.COMM_WORLD.rank, self.nev), comm=self.comm)
+            if abs(eps.getEigenvalue(eps.getConverged() -1)) < tauGenEO_eigmax:
+                PETSc.Sys.Print('WARNING: The largest eigenvalue computed for GenEO_eigmax in subdomain {} is {} < the threshold which is {}. Consider setting PCBNN_GenEO_nev to something larger than {}'.format(mpi.COMM_WORLD.rank, eps.getEigenvalue(eps.getConverged() - 1), tauGenEO_eigmax, eps.getConverged()), comm=self.comm)
+
             for i in range(min(eps.getConverged(),self.maxev)):
                 if(abs(eps.getEigenvalue(i))<tauGenEO_eigmax): #TODO tell slepc that the eigenvalues are real
                     rbm_vecs.append(self.workl.duplicate())

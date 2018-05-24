@@ -7,36 +7,29 @@ import numpy as np
 from elasticity import *
 
 def rhs(coords, rhs):
-    n = rhs.shape
     rhs[..., 1] = -9.81# + rand
 
 OptDB = PETSc.Options()
 Lx = OptDB.getInt('Lx', 10)
 Ly = OptDB.getInt('Ly', 1)
+Lz = OptDB.getInt('Lz', 1)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n)
 ny = OptDB.getInt('ny', Ly*n)
+nz = OptDB.getInt('nz', Lz*n)
+E1 = OptDB.getReal('E1', 10**6)
+E2 = OptDB.getReal('E2', 1)
+nu1 = OptDB.getReal('nu1', 0.4)
+nu2 = OptDB.getReal('nu2', 0.4)
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
+hz = Lz/(nz - 1)
+h = [hx, hy, hz]
 
-da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
-da.setUniformCoordinates(xmax=Lx, ymax=Ly)
+da = PETSc.DMDA().create([nx, ny, nz], dof=3, stencil_width=1)
+da.setUniformCoordinates(xmax=Lx, ymax=Ly, zmax=Lz)
 da.setMatType(PETSc.Mat.Type.IS)
-
-def lame_coeff(x, y, v1, v2):
-    output = np.empty(x.shape)
-    mask = np.logical_or(np.logical_and(.2<=y, y<=.4),np.logical_and(.6<=y, y<=.8))
-    output[mask] = v1
-    output[np.logical_not(mask)] = v2
-    return output
-
-# non constant Young's modulus and Poisson's ratio 
-E = buildCellArrayWithFunction(da, lame_coeff, (10**6,1))
-nu = buildCellArrayWithFunction(da, lame_coeff, (0.4, 0.4))
-
-lamb = (nu*E)/((1+nu)*(1-2*nu)) 
-mu = .5*E/(1+nu)
 
 class callback:
     def __init__(self, da):
@@ -75,22 +68,32 @@ class callback:
                 viewer.destroy()
             self.it += 1
 
+def lame_coeff(x, y, z, v1, v2):
+    output = np.empty(x.shape)
+    mask = np.logical_or(np.logical_and(.2<=z, z<=.4),np.logical_and(.6<=z, z<=.8))
+    output[mask] = v1
+    output[np.logical_not(mask)] = v2
+    return output
+
+# non constant Young's modulus and Poisson's ratio 
+E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2))
+nu = buildCellArrayWithFunction(da, lame_coeff, (nu1, nu2))
+
+lamb = (nu*E)/((1+nu)*(1-2*nu)) 
+mu = .5*E/(1+nu)
 
 x = da.createGlobalVec()
-b = buildRHS(da, [hx, hy], rhs)
-A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
+b = buildRHS(da, h, rhs)
+A = buildElasticityMatrix(da, h, lamb, mu)
 A.assemble()
 
 bcApplyWest(da, A, b)
+bcopy = b.copy()
 
-#Setup the preconditioner (or multipreconditioner) and the coarse space
 pcbnn = PCBNN(A)
 
 # Set initial guess
-bcopy = b.copy()
-
 x.setRandom()
-
 xnorm = b.dot(x)/x.dot(A*x)
 x *= xnorm
 
@@ -100,19 +103,10 @@ ksp.setType(ksp.Type.PYTHON)
 pyKSP = KSP_AMPCG(pcbnn)
 pyKSP.callback = callback(da)
 ksp.setPythonContext(pyKSP)
-ksp.setFromOptions()
 ksp.setInitialGuessNonzero(True)
+ksp.setFromOptions()
 
 ksp.solve(b, x)
 
-# norm = (A*x-b).norm()
-# if mpi.COMM_WORLD.rank == 0:
-#     print(f'norm of the projected residual {norm}')
-
-# x += xtild
-# viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
-# x.view(viewer)
-
-# norm = (A*x-bcopy).norm()
-# if mpi.COMM_WORLD.rank == 0:
-#     print(f'norm of the complete residual {norm}')
+viewer = PETSc.Viewer().createVTK('solution_3d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
+x.view(viewer)
