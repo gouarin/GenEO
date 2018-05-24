@@ -56,7 +56,7 @@ ksp.setOperators(A)
 #pc.setType("lu")
 ksp.setFromOptions()
 
-ksp.solve(b, x)
+#ksp.solve(b, x)
 
 # viewer = PETSc.Viewer().createVTK('solution_2d_dir.vts', 'w', comm = PETSc.COMM_WORLD)
 # x.view(viewer)

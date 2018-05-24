@@ -25,14 +25,13 @@ class MyKSP(object):
             v.destroy()
         del self.work[:]
 
-    def loop(self, ksp, r):
+    def loop(self, ksp, rnorm):
         its = ksp.getIterationNumber()
-        rnorm = r.norm()
         ksp.setResidualNorm(rnorm)
         ksp.logConvergenceHistory(rnorm)
 
-        # FIX define a Monitor
         ksp.monitor(its, rnorm)
+
         reason = ksp.callConvergenceTest(its, rnorm)
         if not reason:
             ksp.setIterationNumber(its+1)
@@ -74,6 +73,7 @@ class KSP_AMPCG(MyKSP):
             If True, some information about the iterations is printed when the code is executed.
     
         """
+        super(KSP_AMPCG, self).__init__()
 
         OptDB = PETSc.Options()
         self.tau = OptDB.getReal('AMPCG_tau', 0.1) 
@@ -165,7 +165,7 @@ class KSP_AMPCG(MyKSP):
         beta = self.gamma.duplicate()
         phi = self.gamma.duplicate()
         
-        while not self.loop(ksp, r):
+        while not self.loop(ksp, rnorm):
             if isinstance(p[-1], list):
                 for i in range(self.ndom):
                     self.gamma[i] = p[-1][i].dot(r)

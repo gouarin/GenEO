@@ -62,6 +62,8 @@ ksp = PETSc.KSP().create()
 ksp.setOperators(A)
 ksp.setType(ksp.Type.PYTHON)
 ksp.setPythonContext(KSP_AMPCG(asm))
+ksp.setFromOptions()
+
 ksp.setInitialGuessNonzero(True)
 
 ksp.solve(b, x)
