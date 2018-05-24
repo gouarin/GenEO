@@ -47,13 +47,12 @@ class KSP_AMPCG(MyKSP):
 
         Parameters
         ==========
-        self: 
-            
+
         mpc : PCBNN Object FIX ?
             the multipreconditioner.  
 
         PETSc.Options
-        =======
+        =============
 
         AMPCG_fullMP : Bool
             Default is False
@@ -86,16 +85,13 @@ class KSP_AMPCG(MyKSP):
 
     def add_vectors(self):
         """
-        Initialize a list of self.ndom global vectors that can be used to store the multipreconditioned residual.  
+        Initialize a list of ndom global vectors that can be used to store the multipreconditioned residual.  
 
-        Parameters
-        ==========
-        self: 
-            
         Returns 
         =======
 
-            : list of self.ndom PETSc.Vecs
+        list of ndom PETSc.Vecs
+
         """
         return [self.work[0].duplicate() for i in range(self.ndom)]
 
@@ -105,7 +101,6 @@ class KSP_AMPCG(MyKSP):
 
         Parameters
         ==========
-        self : FIX 
 
         ksp : FIX
             
@@ -135,15 +130,14 @@ class KSP_AMPCG(MyKSP):
 
         Parameters
         ==========
-        self : FIX 
 
         ksp : FIX
             
         b : PETSc Vec
-        The right hand side for which to solve. 
+            The right hand side for which to solve. 
 
         x : PETSc Vec
-        To store the solution. 
+            To store the solution. 
 
         """
         A, B = ksp.getOperators()

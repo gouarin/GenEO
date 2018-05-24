@@ -38,6 +38,7 @@ def bcApplyWestMat(da, A):
     corresponding to the Dirichlet boundary to 0 and 1 on 
     the diagonal and sets the Dirichlet condition on the 
     second member b.
+
     """
     dim = da.getDim()
     dof = da.getDof()
@@ -84,6 +85,7 @@ def bcApplyWest(da, A, B):
     corresponding to the Dirichlet boundary to 0 and 1 on 
     the diagonal and sets the Dirichlet condition on the 
     second member b.
+
     """
     dim = da.getDim()
     dof = da.getDof()
@@ -140,6 +142,7 @@ def bcApplyEast(da, A, B):
     corresponding to the Dirichlet boundary to 0 and 1 on 
     the diagonal and sets the Dirichlet condition on the 
     second member b.
+
     """
     global_sizes = da.getSizes()
     dof = da.getDof()

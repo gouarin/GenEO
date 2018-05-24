@@ -14,14 +14,13 @@ class PCBNN(object):
 
         Parameters
         ==========
-        self: 
-            
+
         A : petsc.Mat
             The matrix of the problem in IS format. A must be a symmetric positive definite matrix 
             with symmetric positive semi-definite submatrices 
 
         PETSc.Options
-        =======
+        =============
 
         PCBNN_switchtoASM :Bool
             Default is False
@@ -41,10 +40,6 @@ class PCBNN(object):
             Default is False.
             If True, some information about the preconditioners is printed when the code is executed.
 
-        Returns
-        =======
-        PCBNN: FIX: Does this function return a PCBNN object ? 
-            
         """
         OptDB = PETSc.Options()                                
         self.switchtoASM = OptDB.getBool('PCBNN_switchtoASM', False) #use Additive Schwarz as a preconditioner instead of BNN
@@ -109,13 +104,13 @@ class PCBNN(object):
 
         Parameters
         ==========
-        self: 
-            
+
         x : petsc.Vec
             The vector to which the preconditioner is to be applied. 
 
         y : petsc.Vec
             The vector that stores the result of the preconditioning operation. 
+
         """
         self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         self.localksp.solve(self.workl_1, self.workl_2)
@@ -130,13 +125,13 @@ class PCBNN(object):
 
         Parameters
         ==========
-        self: 
-            
+
         x : petsc.Vec
             The vector to which the preconditioner is to be applied. 
 
         y : FIX  
             The list of ndom vectors that stores the result of the multipreconditioning operation (one vector per subdomain). 
+
         """
         self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         self.localksp.solve(self.workl_1, self.workl_2)
@@ -156,8 +151,7 @@ class PCBNN(object):
 
         Parameters
         ==========
-        self: 
-            
+
         pc: This argument is not called within the function but it belongs to the standard way of calling a preconditioner.  
             
         x : petsc.Vec
@@ -165,6 +159,7 @@ class PCBNN(object):
 
         y : petsc.Vec
             The vector that stores the result of the preconditioning operation. 
+
         """
         self.mult(x,y)
 

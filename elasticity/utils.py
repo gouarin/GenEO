@@ -17,8 +17,10 @@ def buildVecWithFunction(da, func, extra_args=()):
 
     Returns
     =======
+
     b: petsc.Vec
         The vector with the function values on each point.
+
     """
     OUT = da.createGlobalVec()
     out = da.getVecArray(OUT)
@@ -52,8 +54,10 @@ def buildCellArrayWithFunction(da, func, extra_args=()):
 
     Returns
     =======
+
     b: petsc.Vec
         The vector with the function values on each cell.
+
     """
     elem = da.getElements()
     coords = da.getCoordinatesLocal()

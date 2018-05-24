@@ -15,7 +15,7 @@ class projection(object):
         ==========
 
         PETSc.Options
-        =======
+        =============
 
         PCBNN_GenEO : Bool
             Default is True. 
@@ -43,9 +43,6 @@ class projection(object):
             Default is 2*PCBNN_GenEO_nev.
             Maximal number of eigenvectors from each eigenvalue problem that can be selected for the coarse space. This is relevant because if more eigenvalues than requested by PBNN_GenEO_nev have converged during the eigensolve then they are all returned so setting the value of PCBNN_GenEO_nev does not impose a limitation on the size of the coarse space.  
 
-        =======
-
-        self: FIX: Does this function return a projection object ? 
         """
         OptDB = PETSc.Options()                                
         self.GenEO = OptDB.getBool('PCBNN_GenEO', True)
@@ -130,8 +127,7 @@ class projection(object):
 
         Parameters
         ==========
-        self: 
-            
+
         rbm_vecs : list of local PETSc .vecs
             rbm_vecs may already contain some local coarse vectors. This routine will possibly add more vectors to the list.
 
@@ -175,8 +171,7 @@ class projection(object):
 
         Parameters
         ==========
-        self: 
-            
+
         rbm_vecs : list of local PETSc .vecs
             rbm_vecs may already contain some local coarse vectors. This routine will possibly add more vectors to the list.
 
@@ -247,24 +242,23 @@ class projection(object):
         Parameters
         ==========
 
-        self: FIX 
-            
         rbm_vecs : list of local PETSc .vecs
            list of the coarse vectors contributed by the subdomain. 
 
         Returns
         ==========
 
-            coarse_vecs : list of local vectors or None ? FIX 
-                list of the local contributions to the coarse space numbered globally: coarse_vecs[i] is either a scaled local vector from rbm_vecs or None if coarse vector number i belongs to another subdomain. The scaling that is applied to the coarse vectors ensures that their A-norm is 1.
+        coarse_vecs : list of local vectors or None ? FIX 
+            list of the local contributions to the coarse space numbered globally: coarse_vecs[i] is either a scaled local vector from rbm_vecs or None if coarse vector number i belongs to another subdomain. The scaling that is applied to the coarse vectors ensures that their A-norm is 1.
 
-            coarse_Avecs : list of global PETSc.Vecs
-                list of the A*coarse_vecs[i]. These are global vectors so not in the same format as the vectors in coarse_vecs. 
-            Delta : PETSc.Mat (local)
-                matrix of the coarse problem. As a result of the scaling of the coarse vectors, its diagonal is 1. This matrix is duplicated over all subdomains This matrix is duplicated over all subdomains
+        coarse_Avecs : list of global PETSc.Vecs
+            list of the A*coarse_vecs[i]. These are global vectors so not in the same format as the vectors in coarse_vecs. 
 
-            ksp_Delta : PETSc.ksp 
-               Krylov subspace solver for the coarse problem matrix Delta.
+        Delta : PETSc.Mat (local)
+            matrix of the coarse problem. As a result of the scaling of the coarse vectors, its diagonal is 1. This matrix is duplicated over all subdomains This matrix is duplicated over all subdomains
+
+        ksp_Delta : PETSc.ksp 
+            Krylov subspace solver for the coarse problem matrix Delta.
 
         """
         if self.verbose:
@@ -333,8 +327,6 @@ class projection(object):
         Parameters
         ==========
 
-        self: FIX 
-            
         x : PETSc.Vec
            Vector to which the projection is applied and in which the result is stored. 
 
@@ -359,13 +351,12 @@ class projection(object):
         Parameters
         ==========
 
-        self: FIX 
-            
         rhs : PETSc.Vec
            Right hand side vector for which to initialize the problem. 
 
         Returns
-        ==========
+        =======
+        
         out : PETSc.Vec
            Solution of the problem projected into the coarse space for the initialization of a projected Krylov subspace solver. 
 
@@ -400,9 +391,7 @@ class projection(object):
 
         Parameters
         ==========
-
-        self: FIX 
-            
+    
         x : PETSc.Vec
            Vector to which the projection is applied and in which the result is stored. 
 

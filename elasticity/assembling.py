@@ -27,8 +27,10 @@ def getMatElemElasticity(h, lamb, mu):
 
     Returns
     =======
+
     out: ndarray
         The elementary matrix of the elasticity operator.
+
     """
     dim = len(h)
     if dim == 2:
@@ -63,6 +65,7 @@ def getIndices(elem, dof):
 
     ind : ndarray
         The list of the entries in the matrix.
+
     """
     ind = np.empty(dof*elem.size, dtype=np.int32)
     for i in range(dof):
@@ -93,8 +96,10 @@ def buildElasticityMatrix(da, h, lamb, mu):
 
     Returns
     =======
+
     A: petsc.Mat
         The matrix of the elasticity operator.
+
     """
     Melem = getMatElemElasticity(h, lamb, mu)
     A = da.createMatrix()
@@ -129,8 +134,10 @@ def buildIdentityMatrix(da):
 
     Returns
     =======
+
     A: petsc.Mat
         The matrix of the elasticity operator.
+
     """
     A = da.createMatrix()
     elem = da.getElements()
@@ -158,8 +165,10 @@ def buildMassMatrix(da, h):
 
     Returns
     =======
+
     A: petsc.Mat
         The mass matrix.
+
     """    
     Melem = getMatElemMass(da.getDim())
 

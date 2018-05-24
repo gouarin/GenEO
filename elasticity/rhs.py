@@ -20,8 +20,10 @@ def buildRHS(da, h, apply_func):
 
     Returns
     =======
+
     b: petsc.Vec
         The right hand side.
+
     """
     b = da.createGlobalVec()
     A = buildMassMatrix(da, h)
