@@ -5,8 +5,15 @@ dependencies:
     - python=3
     - six
     - numpy
+    - scipy
+    - matplotlib
     - sympy
     - setuptools
     - cython
     - mpi4py
-    - petsc=3.8.0
+    - petsc4py=3.9.0
+    - slepc4py=3.9.0
+    - vtk
+    - ipywidgets
+    - pip:
+      - pythreejs==1.0.0b3

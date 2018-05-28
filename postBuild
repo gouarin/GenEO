@@ -1,0 +1,2 @@
+jupyter nbextension install --py --symlink --sys-prefix pythreejs --user
+jupyter nbextension enable --py --sys-prefix pythreejs
