@@ -43,6 +43,10 @@ class projection(object):
             Default is 2*PCBNN_GenEO_nev.
             Maximal number of eigenvectors from each eigenvalue problem that can be selected for the coarse space. This is relevant because if more eigenvalues than requested by PBNN_GenEO_nev have converged during the eigensolve then they are all returned so setting the value of PCBNN_GenEO_nev does not impose a limitation on the size of the coarse space.  
 
+        PCBNN_mumpsCntl3 : Real
+            Default is 1e-6
+            This is a parameter passed to mumps: CNTL(3) is used to determine if a pivot is null when the null pivot detection option is used (which is the case when ICNTL(24) = 1).
+            If PCBNN_mumpsCntl3 is too small, part of the kernel of the local matrices may be missing which will deteriorate convergence significantly or even prevent the algorithm from converging. If it is too large, then more vectors than strictly needed may be incorporated into the coarse space. This leads to a larger coarse problem but will accelrate convergence.  
         """
         OptDB = PETSc.Options()                                
         self.GenEO = OptDB.getBool('PCBNN_GenEO', False)
@@ -51,6 +55,7 @@ class projection(object):
         self.nev = OptDB.getInt('PCBNN_GenEO_nev', 10) 
         self.maxev = OptDB.getInt('PCBNN_GenEO_maxev', 2*self.nev) 
         self.comm = mpi.COMM_SELF
+        self.mumpsCntl3 = OptDB.getReal('PCBNN_mumpsCntl3', 1e-6)
 
         vglobal, _ = PCBNN.A.getVecs()
         vlocal, _ = PCBNN.A_scaled.getVecs()
@@ -73,16 +78,16 @@ class projection(object):
             F = self.ksp.pc.getFactorMatrix()
             F.setMumpsIcntl(7, 2)
             F.setMumpsIcntl(24, 1)
-            F.setMumpsCntl(3, 1e-6)
+            F.setMumpsCntl(3, self.mumpsCntl3)
             self.ksp.pc.setUp()
             nrb = F.getMumpsInfog(28)
 
             rbm_vecs = []
             for i in range(nrb):
                 F.setMumpsIcntl(25, i+1)
-                rbm_vecs.append(workl.duplicate())
-                rbm_vecs[i].set(0.)
-                self.ksp.solve(rbm_vecs[i], rbm_vecs[i])
+                workl.set(0.)
+                self.ksp.solve(workl, workl)
+                rbm_vecs.append(workl.copy())
             
             F.setMumpsIcntl(25, 0)
             if self.verbose:
@@ -195,19 +200,19 @@ class projection(object):
             tempF = temppc.getFactorMatrix()
             tempF.setMumpsIcntl(7, 2)
             tempF.setMumpsIcntl(24, 1)
-            tempF.setMumpsCntl(3, 1e-6)
+            tempF.setMumpsCntl(3, self.mumpsCntl3)
             temppc.setUp()
             tempnrb = tempF.getMumpsInfog(28)
 
             for i in range(tempnrb):
                 tempF.setMumpsIcntl(25, i+1)
-                rbm_vecs.append(self.workl.duplicate())
-                rbm_vecs[-1].set(0.)
-                tempksp.solve(rbm_vecs[-1], rbm_vecs[-1])
+                self.workl.set(0.)
+                tempksp.solve(self.workl, self.workl)
+                rbm_vecs.append(self.workl.copy())
             
             tempF.setMumpsIcntl(25, 0)
             if self.verbose:
-                PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of local operator'.format(mpi.COMM_WORLD.rank, tempnrb), comm=self.comm)
+                PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of the scaled local operator (in GenEO for eigmin)'.format(mpi.COMM_WORLD.rank, tempnrb), comm=self.comm)
 
             #Eigenvalue Problem for smallest eigenvalues
             eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
