@@ -2,3 +2,6 @@ jupyter nbextension install --py --symlink --sys-prefix pythreejs
 jupyter nbextension enable --py --sys-prefix pythreejs
 
 python setup.py install
+
+sh xvfb_bg start
+export DISPLAY=:1
