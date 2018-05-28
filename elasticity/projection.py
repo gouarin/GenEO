@@ -232,7 +232,7 @@ class projection(object):
                    rbm_vecs.append(self.workl.duplicate())
                    eps.getEigenvector(i,rbm_vecs[-1])
                    if self.verbose:
-                       PETSc.Sys.Print('GenEO eigenvalue number {i} for lambdamin in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i)), comm=self.comm)
+                       PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i)), comm=self.comm)
                 else:
                     if self.verbose:
                         PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i), tauGenEO_eigmin), comm=self.comm)

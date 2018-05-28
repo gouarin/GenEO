@@ -8,7 +8,7 @@ from elasticity import *
 
 def rhs(coords, rhs):
     n = rhs.shape
-    rhs[..., 1] = -9.81# + rand
+    rhs[..., 1] = -9.81
 
 OptDB = PETSc.Options()
 Lx = OptDB.getInt('Lx', 10)
