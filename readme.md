@@ -1,3 +1,5 @@
+[![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/gouarin/DDM_elasticity/master)
+
 This project solve the linear elasticity problem using PETSc in 2d and 3d for lamé coefficients which are constant or constant by cell on a cartesian grid.
 
 # Installation
