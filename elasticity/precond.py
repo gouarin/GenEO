@@ -1,345 +1,166 @@
-
 from .assembling import buildElasticityMatrix
 from .bc import bcApplyWestMat, bcApplyWest_vec
 from .cg import cg
+from .projection import projection
 from petsc4py import PETSc
+from slepc4py import SLEPc
 import mpi4py.MPI as mpi
 import numpy as np
 
-class ASM(object):
-    def __init__(self, da_global, projection, h, lamb, mu):
-        self.da_global = da_global
-        self.proj = projection
+class PCBNN(object):
+    def __init__(self, A):
+        """
+        Initialize the domain decomposition preconditioner, multipreconditioner and coarse space with its operators  
 
-        ranges = self.da_global.getRanges()
-        ghost_ranges = self.da_global.getGhostRanges()
+        Parameters
+        ==========
 
-        self.block = []
-        sizes = []
-        for r, gr in zip(ranges, ghost_ranges):
-            self.block.append(slice(gr[0], r[1]))
-            sizes.append(r[1] - gr[0])
-        self.block = tuple(self.block)
+        A : petsc.Mat
+            The matrix of the problem in IS format. A must be a symmetric positive definite matrix 
+            with symmetric positive semi-definite submatrices 
 
-        self.da_local = PETSc.DMDA().create(sizes, dof=len(sizes),
-                                            stencil_width=1,
-                                            comm=PETSc.COMM_SELF)
+        PETSc.Options
+        =============
 
-        mx = self.da_local.getSizes()
-        if len(mx) == 2:
-            self.da_local.setUniformCoordinates(xmax=h[0]*mx[0], ymax=h[1]*mx[1])
-        elif len(mx) == 3:
-            self.da_local.setUniformCoordinates(xmax=h[0]*mx[0], ymax=h[1]*mx[1], zmax=h[2]*mx[2])
+        PCBNN_switchtoASM :Bool
+            Default is False
+            If True then the domain decomposition preconditioner is the BNN preconditioner. If false then the domain 
+            decomposition precondition is the Additive Schwarz preconditioner with minimal overlap. 
 
-        A = buildElasticityMatrix(self.da_local, h, lamb, mu)
-        A.assemble()
+        PCBNN_kscaling : Bool
+            Default is True.
+            If true then kscaling (partition of unity that is proportional to the diagonal of the submatrices of A)
+            is used when a partition of unity is required. Otherwise multiplicity scaling is used when a partition 
+            of unity is required. This may occur in two occasions:
+              - to scale the local BNN matrices if PCBNN_switchtoASM=True, 
+              - in the GenEO eigenvalue problem for eigmin if PCBNN_switchtoASM=False and PCBNN_GenEO=True with
+                PCBNN_GenEO_eigmin > 0 (see projection.__init__ for the meaning of these options). 
 
-        D = self.da_local.createGlobalVec()
-        Dlocal_a = self.da_local.getVecArray(D)
-        Dlocal = self.da_global.createLocalVec()
-        self.da_global.globalToLocal(self.proj.D, Dlocal)
-        D_a = self.da_global.getVecArray(Dlocal)
+        PCBNN_verbose : Bool
+            Default is False.
+            If True, some information about the preconditioners is printed when the code is executed.
 
-        Dlocal_a[...] = D_a[self.block]
-        A.diagonalScale(D, D)
+        """
+        OptDB = PETSc.Options()                                
+        self.switchtoASM = OptDB.getBool('PCBNN_switchtoASM', False) #use Additive Schwarz as a preconditioner instead of BNN
+        self.kscaling = OptDB.getBool('PCBNN_kscaling', True) #kscaling if true, multiplicity scaling if false
+        self.verbose = OptDB.getBool('PCBNN_verbose', False) 
 
-        if mpi.COMM_WORLD.rank == 0:
-            bcApplyWestMat(self.da_local, A)
+        # convert matis to mpiaij, extract local matrices
+        r, _ = A.getLGMap()
+        is_A = PETSc.IS().createGeneral(r.indices)
+        A_mpiaij = A.convertISToAIJ()
+        A_mpiaij_local = A_mpiaij.createSubMatrices(is_A)[0]
+        A_scaled = A.copy().getISLocalMat()
+        vglobal, _ = A.getVecs()
+        vlocal, _ = A_scaled.getVecs()
+        scatter_l2g = PETSc.Scatter().create(vlocal, None, vglobal, is_A)
 
-        self.A = A
+        #compute the multiplicity of each degree of freedom and max of the multiplicity
+        vlocal.set(1.) 
+        vglobal.set(0.) 
+        scatter_l2g(vlocal, vglobal, PETSc.InsertMode.ADD_VALUES)
+        scatter_l2g(vglobal, vlocal, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        NULL,mult_max = vglobal.max()
 
-        # build local solvers
-        self.ksp = PETSc.KSP().create()
-        self.ksp.setOperators(A)
-        self.ksp.setOptionsPrefix("myasm_")
-        self.ksp.setType('preonly')
-        # self.ksp.setType('cg')
-        pc = self.ksp.getPC()
-        # pc.setType('none')
-        pc.setType('lu')
-        pc.setFactorSolverPackage('mumps')
-        pc.setMumpsIcntl(24, 1)
-        pc.setMumpsIcntl(25, -1)
-        self.ksp.setFromOptions()
+        # k-scaling or multiplicity scaling of the local (non-assembled) matrix
+        if self.kscaling == False:
+            A_scaled.diagonalScale(vlocal,vlocal)
+        else:
+            v1 = A_mpiaij_local.getDiagonal()
+            v2 = A_scaled.getDiagonal()
+            A_scaled.diagonalScale(v1/v2, v1/v2)
 
-        # Construct work arrays
-        self.work_global = self.da_global.createLocalVec()
-        self.work1_local = self.da_local.createGlobalVec()
-        self.work2_local = self.da_local.createGlobalVec()
-
-    def mult(self, mat, x, y):
-        self.work_global.set(0.)
-        self.da_global.globalToLocal(x, self.work_global)
-
-        work_global_a = self.da_global.getVecArray(self.work_global)
-
-        work1_local_a = self.da_local.getVecArray(self.work1_local)
-        work1_local_a[:, :] = work_global_a[self.block]
-
-        work2_local_a = self.da_local.getVecArray(self.work2_local)
-        self.ksp.solve(self.work1_local, self.work2_local)
-
-        # self.work2_local = cg(self.A, self.work1_local)
-
-        self.work_global.set(0.)
-        sol_a = self.da_local.getVecArray(self.work2_local)
-
-        work_global_a[self.block] = sol_a[:, :]
-        y.set(0.)
-        self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
-
-        self.proj.apply(y)
-
-class MP_ASM(object):
-    def __init__(self, da_global, projection, h, lamb, mu):
-        self.da_global = da_global
-        self.proj = projection
-
-        ranges = self.da_global.getRanges()
-        ghost_ranges = self.da_global.getGhostRanges()
-
-        self.block = []
-        sizes = []
-        for r, gr in zip(ranges, ghost_ranges):
-            self.block.append(slice(gr[0], r[1]))
-            sizes.append(r[1] - gr[0])
-        self.block = tuple(self.block)
-        #self.block = (slice(gxs, xe), slice(gys, ye))
-
-        self.da_local = PETSc.DMDA().create(sizes, dof=len(sizes), 
-                                            stencil_width=1,
-                                            comm=PETSc.COMM_SELF)
-
-        mx = self.da_local.getSizes()
-        if len(mx) == 2:
-            self.da_local.setUniformCoordinates(xmax=h[0]*mx[0], ymax=h[1]*mx[1])
-        elif len(mx) == 3:
-            self.da_local.setUniformCoordinates(xmax=h[0]*mx[0], ymax=h[1]*mx[1], zmax=h[2]*mx[2])
-
-        A = buildElasticityMatrix(self.da_local, h, lamb, mu)
-        A.assemble()
-
-        D = self.da_local.createGlobalVec()
-        Dlocal_a = self.da_local.getVecArray(D)
-        Dlocal = self.da_global.createLocalVec()
-        self.da_global.globalToLocal(self.proj.D, Dlocal)
-        D_a = self.da_global.getVecArray(Dlocal)
-
-        Dlocal_a[...] = D_a[self.block]
-        A.diagonalScale(D, D)
-
-        if mpi.COMM_WORLD.rank == 0:
-            bcApplyWestMat(self.da_local, A)
+        # the default local solver is the scaled non assembled local matrix (as in BNN)
+        if self.switchtoASM:
+            Alocal = A_mpiaij_local
+            if mpi.COMM_WORLD.rank == 0:
+                print('The user has chosen to switch to Additive Schwarz instead of BNN.')
+        else: #(default)
+            Alocal = A_scaled
+        localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+        localksp.setOptionsPrefix("localksp_") 
+        localksp.setOperators(Alocal)
+        localksp.setType('preonly')
+        localpc = localksp.getPC()
+        localpc.setType('cholesky')
+        localpc.setFactorSolverType('mumps')
+        localksp.setFromOptions()
 
         self.A = A
+        self.A_scaled = A_scaled
+        self.A_mpiaij_local = A_mpiaij_local
+        self.localksp = localksp
+        self.workl_1 = vlocal.copy()
+        self.workl_2 = self.workl_1.copy()
+        self.scatter_l2g = scatter_l2g 
+        self.mult_max = mult_max
 
-        # build local solvers
-        self.ksp = PETSc.KSP().create()
-        self.ksp.setOperators(self.A)
-        self.ksp.setOptionsPrefix("myasm_")
-        self.ksp.setType('preonly')
-        #self.ksp.setType('cg')
-        pc = self.ksp.getPC()
-        #pc.setType('none')
-        pc.setType('cholesky')
-        pc.setFactorSolverPackage('mumps')
-        pc.setFactorMatSolverPackage()
-        F = pc.getFactorMatrix()
-
-        F.setMumpsIcntl(7, 2)
-        F.setMumpsIcntl(24, 1)
-        F.setMumpsCntl(3, 1e-6)
+        self.proj = projection(self)
         
-        self.ksp.setUp()
-        self.ksp.setFromOptions()
-
-        nrb = F.getMumpsInfog(28)
-
-        projection.setRBM(self.ksp, F, self.A.size[0], nrb, self.block, self.da_local)
-
-        F.setMumpsIcntl(25, 0)
-
-        # if nrb != 0:
-        #     projection.setRBM(self.ksp, self.A)
-        #     rhs = []
-        #     for i in range(nrb):
-        #         F.setMumpsIcntl(25, i+1)
-        #         rhs.append(PETSc.Vec().createSeq(self.A.size[0]))
-        #         self.ksp.solve(rhs[-1], rhs[-1])
-
-        #     F.setMumpsIcntl(25, 0)
-        # else:
-        #     pc.setType('lu')
-
-        if nrb == 0:
-            pc.setType('lu')
-
-        # Construct work arrays
-        self.work_global = self.da_global.createLocalVec()
-        self.work1_local = self.da_local.createGlobalVec()
-        self.work2_local = self.da_local.createGlobalVec()
-
     def mult(self, x, y):
-        self.work_global.set(0.)
-        self.da_global.globalToLocal(x, self.work_global)
+        """
+        Applies the domain decomposition preconditioner followed by the projection preconditioner to a vector. 
 
-        work_global_a = self.da_global.getVecArray(self.work_global)
+        Parameters
+        ==========
 
-        work1_local_a = self.da_local.getVecArray(self.work1_local)
-        work1_local_a[...] = work_global_a[self.block]
+        x : petsc.Vec
+            The vector to which the preconditioner is to be applied. 
 
-        work2_local_a = self.da_local.getVecArray(self.work2_local)
-        self.ksp.solve(self.work1_local, self.work2_local)
+        y : petsc.Vec
+            The vector that stores the result of the preconditioning operation. 
 
-        self.work_global.set(0.)
-        sol_a = self.da_local.getVecArray(self.work2_local)
+        """
+        self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.localksp.solve(self.workl_1, self.workl_2)
 
+        y.set(0.)
+        self.scatter_l2g(self.workl_2, y, PETSc.InsertMode.ADD_VALUES)
+        self.proj.project(y)
+
+    def MP_mult(self, x, y):
+        """
+        Applies the domain decomposition multipreconditioner followed by the projection preconditioner to a vector. 
+
+        Parameters
+        ==========
+
+        x : petsc.Vec
+            The vector to which the preconditioner is to be applied. 
+
+        y : FIX  
+            The list of ndom vectors that stores the result of the multipreconditioning operation (one vector per subdomain). 
+
+        """
+        self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.localksp.solve(self.workl_1, self.workl_2)
         for i in range(mpi.COMM_WORLD.size):
-            self.work_global.set(0.)
+            self.workl_1.set(0)
             if mpi.COMM_WORLD.rank == i:
-                work_global_a[self.block] = sol_a[...]
-            
+                self.workl_1 = self.workl_2.copy()
             y[i].set(0.)
-            self.da_global.localToGlobal(self.work_global, y[i], addv=PETSc.InsertMode.ADD_VALUES)
-
-            self.proj.apply(y[i])
-
-    def mult_z(self, x, y):
-        self.work_global.set(0.)
-        self.da_global.globalToLocal(x, self.work_global)
-
-        work_global_a = self.da_global.getVecArray(self.work_global)
-
-        work1_local_a = self.da_local.getVecArray(self.work1_local)
-        work1_local_a[...] = work_global_a[self.block]
-
-        work2_local_a = self.da_local.getVecArray(self.work2_local)
-        self.ksp.solve(self.work1_local, self.work2_local)
-
-        self.work_global.set(0.)
-        sol_a = self.da_local.getVecArray(self.work2_local)
-
-        work_global_a[self.block] = sol_a[...]
-        y.set(0.)
-        self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
-
-        self.proj.apply(y)
-
-class ASM_old(object):
-    def __init__(self, da_global, D_global, vecs, Avecs, h, lamb, mu):
-        self.da_global = da_global
-        self.vecs = vecs
-        self.Avecs = Avecs
-
-        (xs, xe), (ys, ye) = self.da_global.getRanges()
-        (gxs, gxe), (gys, gye) = self.da_global.getGhostRanges()
-        self.block = (slice(gxs, xe), slice(gys, ye))
-
-        self.da_local = PETSc.DMDA().create([xe-gxs, ye-gys], dof=2, 
-                                            stencil_width=1,
-                                            comm=PETSc.COMM_SELF)
-        mx, my = self.da_local.getSizes()
-        self.da_local.setUniformCoordinates(xmax=h[0]*mx, ymax=h[1]*my)
-
-        A = buildElasticityMatrix(self.da_local, h, lamb, mu)
-        A.assemble()
-
-        D = self.da_local.createGlobalVec()
-        Dlocal_a = self.da_local.getVecArray(D)
-        Dlocal = self.da_global.createLocalVec()
-        self.da_global.globalToLocal(D_global, Dlocal)
-        D_a = self.da_global.getVecArray(Dlocal)
-
-        Dlocal_a[:, :] = D_a[self.block]
-        A.diagonalScale(D, D)
-
-        if mpi.COMM_WORLD.rank == 0:
-            bcApplyWestMat(self.da_local, A)
-
-        # bcApplyWestMat(self.da_local, A)
-
-        self.nullspace = PETSc.NullSpace().createRigidBody(self.da_local.getCoordinates())
-        u, v, r = self.nullspace.getVecs()
-        u[:] /= D[:]
-        v[:] /= D[:]
-        r[:] /= D[:]
-        if mpi.COMM_WORLD.rank == 0:
-            bcApplyWest_vec(self.da_local, u)
-            bcApplyWest_vec(self.da_local, v)
-            bcApplyWest_vec(self.da_local, r)
-
-        # bcApplyWest_vec(self.da_local, u)
-        # bcApplyWest_vec(self.da_local, v)
-        # bcApplyWest_vec(self.da_local, r)
-
-        # if mpi.COMM_WORLD.rank != 0:
-        #     A.setNearNullSpace(self.nullspace)
-        #A.setNullSpace(self.nullspace)
-        self.A = A
-
-        # build local solvers
-        self.ksp = PETSc.KSP().create()
-        self.ksp.setOperators(A)
-        self.ksp.setOptionsPrefix("myasm_")
-        self.ksp.setType('preonly')
-        # self.ksp.setType('cg')
-        pc = self.ksp.getPC()
-        # pc.setType('none')
-        pc.setType('lu')
-        self.ksp.setFromOptions()
-
-        # Construct work arrays
-        self.work_global = self.da_global.createLocalVec()
-        self.workg_global = self.da_global.createGlobalVec()
-        self.work1_local = self.da_local.createGlobalVec()
-        self.work2_local = self.da_local.createGlobalVec()
-
-    def mult(self, x, y):
-        self.work_global.set(0.)
-        self.da_global.globalToLocal(x, self.work_global)
-
-        work_global_a = self.da_global.getVecArray(self.work_global)
-
-        work1_local_a = self.da_local.getVecArray(self.work1_local)
-        work1_local_a[:, :] = work_global_a[self.block]
-
-        work2_local_a = self.da_local.getVecArray(self.work2_local)
-        self.ksp.solve(self.work1_local, self.work2_local)
-
-        # self.work2_local = cg(self.A, self.work1_local)
-
-        self.work_global.set(0.)
-        sol_a = self.da_local.getVecArray(self.work2_local)
-
-        work_global_a[self.block] = sol_a[:, :]
-        y.set(0.)
-        self.da_global.localToGlobal(self.work_global, y, addv=PETSc.InsertMode.ADD_VALUES)
-
-        self.workg_global.set(0)
-        for vec, Avec in zip(self.vecs, self.Avecs):
-            self.workg_global += Avec.dot(y)*vec
-        
-        y -= self.workg_global
-
-class PC_JACOBI(object):
-    def setUp(self, pc):
-        B, self.P = pc.getOperators()
-        self.diag = self.P.getDiagonal()
+            self.scatter_l2g(self.workl_1, y[i], PETSc.InsertMode.ADD_VALUES)
+            self.proj.project(y[i])
 
     def apply(self, pc, x, y):
-        y.array = x/self.diag
+        """
+        Applies the domain decomposition preconditioner followed by the projection preconditioner to a vector. 
+        This is just a call to PCBNN.mult with the function name and arguments that allow PCBNN to be passed
+        as a preconditioner to PETSc.ksp.
+
+        Parameters
+        ==========
+
+        pc: This argument is not called within the function but it belongs to the standard way of calling a preconditioner.  
+            
+        x : petsc.Vec
+            The vector to which the preconditioner is to be applied. 
+
+        y : petsc.Vec
+            The vector that stores the result of the preconditioning operation. 
+
+        """
+        self.mult(x,y)
 
 
-class PCASM(object):
-    def setUp(self, pc):
-        B, self.P = pc.getOperators()
-
-    def apply(self, pc, x, y):
-        y.array = self.P*x
-
-class PC_MP_ASM(object):
-    def setUp(self, pc):
-        B, self.P = pc.getOperators()
-
-    def my_apply(self, x, y):
-        self.P.my_mult(x, y)

@@ -7,22 +7,28 @@ import numpy as np
 from elasticity import *
 
 def rhs(coords, rhs):
-    n = rhs.shape
-    #rand = np.random.random(n[:-1])
     rhs[..., 1] = -9.81# + rand
 
 OptDB = PETSc.Options()
 Lx = OptDB.getInt('Lx', 10)
 Ly = OptDB.getInt('Ly', 1)
+Lz = OptDB.getInt('Lz', 1)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n)
 ny = OptDB.getInt('ny', Ly*n)
+nz = OptDB.getInt('nz', Lz*n)
+E1 = OptDB.getReal('E1', 10**6)
+E2 = OptDB.getReal('E2', 1)
+nu1 = OptDB.getReal('nu1', 0.4)
+nu2 = OptDB.getReal('nu2', 0.4)
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
+hz = Lz/(nz - 1)
+h = [hx, hy, hz]
 
-da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
-da.setUniformCoordinates(xmax=Lx, ymax=Ly)
+da = PETSc.DMDA().create([nx, ny, nz], dof=3, stencil_width=1)
+da.setUniformCoordinates(xmax=Lx, ymax=Ly, zmax=Lz)
 da.setMatType(PETSc.Mat.Type.IS)
 
 class callback:
@@ -62,64 +68,45 @@ class callback:
                 viewer.destroy()
             self.it += 1
 
-# constant young modulus
-E = 30000
-# constant Poisson coefficient
-nu = 0.4
+def lame_coeff(x, y, z, v1, v2):
+    output = np.empty(x.shape)
+    mask = np.logical_or(np.logical_and(.2<=z, z<=.4),np.logical_and(.6<=z, z<=.8))
+    output[mask] = v1
+    output[np.logical_not(mask)] = v2
+    return output
+
+# non constant Young's modulus and Poisson's ratio 
+E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2))
+nu = buildCellArrayWithFunction(da, lame_coeff, (nu1, nu2))
 
 lamb = (nu*E)/((1+nu)*(1-2*nu)) 
 mu = .5*E/(1+nu)
 
 x = da.createGlobalVec()
-b = buildRHS(da, [hx, hy], rhs)
-
-A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
+b = buildRHS(da, h, rhs)
+A = buildElasticityMatrix(da, h, lamb, mu)
 A.assemble()
 
 bcApplyWest(da, A, b)
+bcopy = b.copy()
 
-asm = PCBNN(A)
-P = PETSc.Mat().createPython(
-    [x.getSizes(), b.getSizes()], comm=da.comm)
-P.setPythonContext(asm)
-P.setUp()
+pcbnn = PCBNN(A)
 
 # Set initial guess
-xtild = asm.proj.coarse_init(b)
-bcopy = b.copy()
-# b -= A*xtild
-
 x.setRandom()
-# asm.proj.project(x)
-# bcApplyWest_vec(da, x)
 xnorm = b.dot(x)/x.dot(A*x)
 x *= xnorm
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
 ksp.setType(ksp.Type.PYTHON)
-pyKSP = KSP_AMPCG(asm)
+pyKSP = KSP_AMPCG(pcbnn)
 pyKSP.callback = callback(da)
 ksp.setPythonContext(pyKSP)
+ksp.setInitialGuessNonzero(True)
 ksp.setFromOptions()
-# ksp.setInitialGuessNonzero(True)
 
 ksp.solve(b, x)
 
-norm = (A*x-bcopy).norm()
-if mpi.COMM_WORLD.rank == 0:
-    print(norm)
-
-x += xtild
-viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
+viewer = PETSc.Viewer().createVTK('solution_3d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)
-
-norm = (A*x-bcopy).norm()
-if mpi.COMM_WORLD.rank == 0:
-    print(norm)
-
-# context = ksp.getPythonContext()
-# import matplotlib.pyplot as plt
-# if mpi.COMM_WORLD.rank == 0:
-#     plt.semilogy(context.natural_norm)
-#     plt.show()
