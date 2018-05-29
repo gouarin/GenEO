@@ -1,4 +1,4 @@
-name: petsc-elasticity
+name: petsc-geneo
 channels:
   - conda-forge
 dependencies:
@@ -16,4 +16,4 @@ dependencies:
     - vtk
     - ipywidgets
     - pip:
-      - pythreejs==1.0.0b3
+      - pythreejs==1.0.0
