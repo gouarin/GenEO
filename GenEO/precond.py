@@ -46,7 +46,7 @@ class PCBNN(object):
             If True, some information about the preconditioners is printed when the code is executed.
 
         """
-        OptDB = PETSc.Options()                                
+        OptDB = PETSc.Options()
         self.switchtoASM = OptDB.getBool('PCBNN_switchtoASM', False) #use Additive Schwarz as a preconditioner instead of BNN
         self.kscaling = OptDB.getBool('PCBNN_kscaling', True) #kscaling if true, multiplicity scaling if false
         self.verbose = OptDB.getBool('PCBNN_verbose', False) 

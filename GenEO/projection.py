@@ -53,8 +53,8 @@ class projection(object):
             This is a parameter passed to mumps: CNTL(3) is used to determine if a pivot is null when the null pivot detection option is used (which is the case when ICNTL(24) = 1).
             If PCBNN_mumpsCntl3 is too small, part of the kernel of the local matrices may be missing which will deteriorate convergence significantly or even prevent the algorithm from converging. If it is too large, then more vectors than strictly needed may be incorporated into the coarse space. This leads to a larger coarse problem but will accelrate convergence.  
         """
-        OptDB = PETSc.Options()                                
-        self.GenEO = OptDB.getBool('PCBNN_GenEO', False)
+        OptDB = PETSc.Options()
+        self.GenEO = OptDB.getBool('PCBNN_GenEO', True)
         self.eigmax = OptDB.getReal('PCBNN_GenEO_eigmax', 10)
         self.eigmin = OptDB.getReal('PCBNN_GenEO_eigmin', 0.1)
         self.nev = OptDB.getInt('PCBNN_GenEO_nev', 10) 
