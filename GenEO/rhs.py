@@ -1,3 +1,8 @@
+# Authors:
+#     Loic Gouarin <loic.gouarin@cmap.polytechnique.fr>
+#     Nicole Spillane <nicole.spillane@cmap.polytechnique.fr>
+#
+# License: BSD 3 clause
 from .utils import buildVecWithFunction
 from.assembling import buildMassMatrix
 

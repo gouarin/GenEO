@@ -1,3 +1,8 @@
+# Authors:
+#     Loic Gouarin <loic.gouarin@cmap.polytechnique.fr>
+#     Nicole Spillane <nicole.spillane@cmap.polytechnique.fr>
+#
+# License: BSD 3 clause
 from .assembling import buildElasticityMatrix
 from .bc import bcApplyWestMat, bcApplyWest_vec
 from .cg import cg

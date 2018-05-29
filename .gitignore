@@ -1,3 +1,4 @@
 *.vts
 __pycache__
 *.c
+*.so

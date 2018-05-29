@@ -1,3 +1,8 @@
+# Authors:
+#     Loic Gouarin <loic.gouarin@cmap.polytechnique.fr>
+#     Nicole Spillane <nicole.spillane@cmap.polytechnique.fr>
+#
+# License: BSD 3 clause
 from petsc4py import PETSc
 import mpi4py.MPI as mpi
 from math import sqrt, inf

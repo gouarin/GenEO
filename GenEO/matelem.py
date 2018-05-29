@@ -1,3 +1,8 @@
+# Authors:
+#     Loic Gouarin <loic.gouarin@cmap.polytechnique.fr>
+#     Nicole Spillane <nicole.spillane@cmap.polytechnique.fr>
+#
+# License: BSD 3 clause
 from __future__ import division, print_function
 from six.moves import range
 import sympy

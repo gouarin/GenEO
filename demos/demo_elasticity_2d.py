@@ -1,10 +1,15 @@
+# Authors:
+#     Loic Gouarin <loic.gouarin@cmap.polytechnique.fr>
+#     Nicole Spillane <nicole.spillane@cmap.polytechnique.fr>
+#
+# License: BSD 3 clause
 from __future__ import print_function, division
 import sys, petsc4py
 petsc4py.init(sys.argv)
 import mpi4py.MPI as mpi
 from petsc4py import PETSc
 import numpy as np
-from elasticity import *
+from GenEO import *
 
 def rhs(coords, rhs):
     n = rhs.shape

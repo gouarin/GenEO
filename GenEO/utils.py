@@ -1,3 +1,8 @@
+# Authors:
+#     Loic Gouarin <loic.gouarin@cmap.polytechnique.fr>
+#     Nicole Spillane <nicole.spillane@cmap.polytechnique.fr>
+#
+# License: BSD 3 clause
 def buildVecWithFunction(da, func, extra_args=()):
     """
     Construct a vector using a function applied on

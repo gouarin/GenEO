@@ -1,10 +1,15 @@
+# Authors:
+#     Loic Gouarin <loic.gouarin@cmap.polytechnique.fr>
+#     Nicole Spillane <nicole.spillane@cmap.polytechnique.fr>
+#
+# License: BSD 3 clause
 from __future__ import print_function, division
 import sys, petsc4py
 petsc4py.init(sys.argv)
 import mpi4py.MPI as mpi
 from petsc4py import PETSc
 import numpy as np
-from elasticity import *
+from GenEO import *
 
 def rhs(coords, rhs):
     rhs[..., 1] = -9.81# + rand
@@ -110,3 +115,16 @@ ksp.solve(b, x)
 
 viewer = PETSc.Viewer().createVTK('solution_3d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)
+
+lamb_petsc = da.createGlobalVec()
+lamb_a = da.getVecArray(lamb_petsc)
+coords = da.getCoordinates()
+coords_a = da.getVecArray(coords)
+E = lame_coeff(coords_a[:, :, :, 0], coords_a[:, :, :, 1], coords_a[:, :, :, 2], E1, E2)
+nu = lame_coeff(coords_a[:, :, :, 0], coords_a[:, :, :, 1], coords_a[:, :, :, 2], nu1, nu2)
+
+lamb_a[:, :, :, 0] = (nu*E)/((1+nu)*(1-2*nu)) 
+lamb_a[:, :, :, 1] = mpi.COMM_WORLD.rank
+lamb_petsc.view(viewer)
+
+viewer.destroy()
