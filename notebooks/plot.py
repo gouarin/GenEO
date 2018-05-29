@@ -73,9 +73,8 @@ def get_faces_and_edges(index):
 def plot_solution(path, filename):
     coarse_vecs = []
     coarse_files = glob(path + '/coarse_vec*.vts')
-    coarse_files.sort()
-    for f in coarse_files:
-        coarse_vecs.append(read_coarse_vec(f))
+    for i in range(len(coarse_files)):
+        coarse_vecs.append(read_coarse_vec(path + '/coarse_vec_{}.vts'.format(i)))
 
     dim, coords, index, numpy_arrays, fieldnames = read_data(path + '/' + filename)
     work = np.zeros_like(coords)
