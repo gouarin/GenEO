@@ -33,7 +33,9 @@ class MyKSP(object):
     def loop(self, ksp, r, z):
         normType = ksp.getNormType()
         if normType == PETSc.KSP.NormType.NORM_PRECONDITIONED:
-            norm = z.norm()
+            # FIX: print a message to inform that we use the natural norm
+            norm = sqrt(r.dot(z))
+            #norm = z.norm()
         elif normType == PETSc.KSP.NormType.NORM_UNPRECONDITIONED:
             norm = r.norm()
         # FIX petsc4py to use it
