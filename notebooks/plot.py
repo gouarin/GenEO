@@ -76,6 +76,11 @@ def plot_solution(path, filename):
     for i in range(len(coarse_files)):
         coarse_vecs.append(read_coarse_vec(path + '/coarse_vec_{}.vts'.format(i)))
 
+    cg_ites = []
+    cg_files = glob(path + '/cg_ite_*.vts')
+    for i in range(len(cg_files)):
+        cg_ites.append(read_coarse_vec(path + '/cg_ite_{}.vts'.format(i)))
+
     dim, coords, index, numpy_arrays, fieldnames = read_data(path + '/' + filename)
     work = np.zeros_like(coords)
     faces_, edges_ = get_faces_and_edges(index)
@@ -146,6 +151,8 @@ def plot_solution(path, filename):
     coarse_vecs_label = OrderedDict({'none': -1})
     for i in range(len(coarse_vecs)):
         coarse_vecs_label[('coarse vec {}').format(i)] = i
+    for i in range(len(cg_ites)):
+        coarse_vecs_label[('cg iteration {}').format(i)] = len(coarse_vecs) + i
 
     select_coarse_vecs = widgets.Dropdown(options=coarse_vecs_label,
       value=-1,
@@ -174,29 +181,33 @@ def plot_solution(path, filename):
         if show_displacement.value:
             if select_coarse_vecs.value == -1:
                 for i in range(dim):
-                    work[(..., i)] += numpy_arrays[i]
+                    work[(..., i)] += scale.value * numpy_arrays[i]
 
             else:
-                for i in range(dim):
-                    work[(..., i)] += scale.value * coarse_vecs[select_coarse_vecs.value][i]
+                if select_coarse_vecs.value < len(coarse_vecs):
+                    for i in range(dim):
+                        work[(..., i)] += scale.value * coarse_vecs[select_coarse_vecs.value][i]
+                else:
+                    for i in range(dim):
+                        work[(..., i)] += scale.value * cg_ites[select_coarse_vecs.value-len(coarse_vecs)][i]
 
-            if rank >= 0:
-                new_coords = work[faces_by_rank[rank]].reshape(-1, 3)
-                minCoords = new_coords.min(axis=0)
-                maxCoords = new_coords.max(axis=0)
-                midCoords = 0.5 * (minCoords + maxCoords)
-                scene.position = tuple(-midCoords)
-                vertices.array = work[faces_by_rank[rank]].reshape(-1, 3)
-                bcolor.array = scalar2rgb(numpy_arrays[select.value])[faces_by_rank[rank]]
-                edges.array = work[edges_by_rank[rank]].reshape(-1, 3)
-            else:
-                vertices.array = work[faces_].reshape(-1, 3)
-                bcolor.array = scalar2rgb(numpy_arrays[select.value])[faces_]
-                edges.array = work[edges_].reshape(-1, 3)
-                minCoords = work.min(axis=0)
-                maxCoords = work.max(axis=0)
-                midCoords = 0.5 * (minCoords + maxCoords)
-                scene.position = tuple(-midCoords)
+        if rank >= 0:
+            new_coords = work[faces_by_rank[rank]].reshape(-1, 3)
+            minCoords = new_coords.min(axis=0)
+            maxCoords = new_coords.max(axis=0)
+            midCoords = 0.5 * (minCoords + maxCoords)
+            scene.position = tuple(-midCoords)
+            vertices.array = work[faces_by_rank[rank]].reshape(-1, 3)
+            bcolor.array = scalar2rgb(numpy_arrays[select.value])[faces_by_rank[rank]]
+            edges.array = work[edges_by_rank[rank]].reshape(-1, 3)
+        else:
+            vertices.array = work[faces_].reshape(-1, 3)
+            bcolor.array = scalar2rgb(numpy_arrays[select.value])[faces_]
+            edges.array = work[edges_].reshape(-1, 3)
+            minCoords = work.min(axis=0)
+            maxCoords = work.max(axis=0)
+            midCoords = 0.5 * (minCoords + maxCoords)
+            scene.position = tuple(-midCoords)
 
     select.observe(update_domain, names=['value'])
     select_dom.observe(update_domain, names=['value'])
