@@ -45,11 +45,23 @@ class PCBNN(object):
             Default is False.
             If True, some information about the preconditioners is printed when the code is executed.
 
+        PCBNN_CoarseProjection :True 
+            Default is True
+            If False then there is no coarse projection: Two level Additive Schwarz or One-level preconditioner depending on PCBNN_addCoarseSolve
+            If True, the coarse projection is applied: Projected preconditioner of hybrid preconditioner depending on PCBNN_addCoarseSolve 
+
+        PCBNN_addCoarseSolve : False
+            Default is True 
+            If True then (R0t A0\R0 r) is added to the preconditioned residual  
+            False corresponds to the projected preconditioner (need to choose initial guess accordingly) (or the one level preconditioner if PCBNN_CoarseProjection = False)
+            True corresponds to the hybrid preconditioner (or the fully additive preconditioner if PCBNN_CoarseProjection = False)
         """
         OptDB = PETSc.Options()
         self.switchtoASM = OptDB.getBool('PCBNN_switchtoASM', False) #use Additive Schwarz as a preconditioner instead of BNN
         self.kscaling = OptDB.getBool('PCBNN_kscaling', True) #kscaling if true, multiplicity scaling if false
         self.verbose = OptDB.getBool('PCBNN_verbose', False) 
+        self.addCS = OptDB.getBool('PCBNN_addCoarseSolve', False) 
+        self.projCS = OptDB.getBool('PCBNN_CoarseProjection', True) 
 
         # convert matis to mpiaij, extract local matrices
         r, _ = A.getLGMap()
@@ -122,7 +134,8 @@ class PCBNN(object):
 
         y.set(0.)
         self.scatter_l2g(self.workl_2, y, PETSc.InsertMode.ADD_VALUES)
-        self.proj.project(y)
+        if self.projCS == True: 
+            self.proj.project(y)
 
     def MP_mult(self, x, y):
         """
@@ -166,6 +179,17 @@ class PCBNN(object):
             The vector that stores the result of the preconditioning operation. 
 
         """
-        self.mult(x,y)
+        xd = x.copy()
+        if self.projCS == True:  
+            self.proj.project_transpose(xd)
+        self.mult(xd,y)
+        if self.addCS == True:  
+            xd = x.copy()
+            ytild = self.proj.coarse_init(xd)
+            #tempxd = xd.dot(xd)
+            #print(f'tempxd : {tempxd}')
+            #tempytild = ytild.dot(ytild)
+            #print(f'tempytild : {tempytild}')
+            y += ytild
 
 

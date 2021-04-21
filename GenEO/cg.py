@@ -7,7 +7,7 @@ from petsc4py import PETSc
 import mpi4py.MPI as mpi
 from math import sqrt, inf
 from sys import getrefcount
-
+import numpy as np
 from .bc import bcApplyWest_vec
 
 class MyKSP(object):
@@ -49,8 +49,15 @@ class MyKSP(object):
 
         context = ksp.getPythonContext()
         comm = ksp.comm
+
         if context.verbose:
-            PETSc.Sys.Print('\tnatural_norm -> {:10.8e}\n\tti -> {:10.8e}'.format(context.natural_norm[its], context.ti[its]), comm=comm)
+            output = f"\tnatural_norm -> {context.natural_norm[its]:10.8e}"
+            if hasattr(context, 'ti'):
+                output += f"\n\tti -> {context.ti[its]:10.8e}"
+            PETSc.Sys.Print(output, comm=comm)
+
+#        if context.verbose:
+#            PETSc.Sys.Print('\tnatural_norm -> {:10.8e}\n\tti -> {:10.8e}'.format(context.natural_norm[its], context.ti[its]), comm=comm)
 
         reason = ksp.callConvergenceTest(its, norm)
         if not reason:
@@ -95,7 +102,6 @@ class KSP_AMPCG(MyKSP):
     
         """
         super(KSP_AMPCG, self).__init__()
-
         OptDB = PETSc.Options()
         self.tau = OptDB.getReal('AMPCG_tau', 0.1) 
         self.MPinitit = OptDB.getBool('AMPCG_MPinitit', (self.tau>0)) 
@@ -329,6 +335,24 @@ def cg(A, b, rtol=1e-5, ite_max=5000):
     return x
 
 class KSP_PCG(MyKSP):
+    """
+    PETSc.Options
+    =============
+
+    PCG_Ritz : Bool
+        Default is True
+        If True then the Ritz values of the preconditioned operator are computed after PCG has converged
+    """
+    def __init__(self):
+        super(KSP_PCG, self).__init__()
+
+        OptDB = PETSc.Options()
+        self.verbose = OptDB.getBool('PCG_verbose', False)
+        self.Ritz = OptDB.getReal('PCG_Ritz', True) 
+        self.natural_norm = []
+        if self.Ritz:
+            self.alpha_save = [] #for computing the ritz values
+            self.beta_save = [] #for computing the ritz values
 
     def setUp(self, ksp):
         super(KSP_PCG, self).setUp(ksp)
@@ -349,26 +373,48 @@ class KSP_PCG(MyKSP):
         z.copy(p)
         delta_0 = r.dot(z)
         delta = delta_0
+        natural_norm = sqrt(r.dot(z))
+        self.natural_norm.append(natural_norm)
 
         ite = 0
         if mpi.COMM_WORLD.rank == 0:
             print(f'ite: {ite} residual -> {delta}')
         
-        while not self.loop(ksp, r):
+        while not self.loop(ksp, r, z):
             A.mult(p, Ap)
             alpha = delta / p.dot(Ap)
+            if self.Ritz:
+                self.alpha_save.append(alpha)
             x.axpy(+alpha, p)
             r.axpy(-alpha, Ap)
 
             P.apply(r, z)
+            natural_norm = sqrt(r.dot(z))
+            self.natural_norm.append(natural_norm)
 
             delta_old = delta
             delta = r.dot(z)
             beta = delta / delta_old
+            if self.Ritz:
+                self.beta_save.append(beta)
             p.aypx(beta, z)
 
             ite += 1
             if mpi.COMM_WORLD.rank == 0:
                 print(f'ite: {ite} residual -> {delta}')
-
+        if self.Ritz:
+            self.alpha_save = np.array(self.alpha_save)
+            self.beta_save = np.array(self.beta_save)
+            self.beta_save = self.beta_save[:-1]
+            self.diag = 1./self.alpha_save            
+            self.diag[1:] += self.beta_save /self.alpha_save[:-1]
+            self.subdiag = - np.sqrt(self.beta_save)/self.alpha_save[:-1]
+            self.T = np.diag(self.diag)
+            self.T += np.diag(self.subdiag,1)
+            self.T += np.diag(self.subdiag,-1)
+            [D,V] = np.linalg.eigh(self.T)
+            if mpi.COMM_WORLD.rank == 0:
+                   print("\nD : ", D) 
+#            print("\nalpha_save : ", self.alpha_save) 
+#            print("Shape : ", self.alpha_save.shape)
 
