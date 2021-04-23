@@ -12,15 +12,15 @@ from slepc4py import SLEPc
 import mpi4py.MPI as mpi
 import numpy as np
 
-class PCBNN(object):
-    def __init__(self, A):
+class PCBNN(object): #Neumann-Neumann and Additive Scharz with no overlap
+    def __init__(self, A_IS):
         """
         Initialize the domain decomposition preconditioner, multipreconditioner and coarse space with its operators  
 
         Parameters
         ==========
 
-        A : petsc.Mat
+        A_IS : petsc.Mat
             The matrix of the problem in IS format. A must be a symmetric positive definite matrix 
             with symmetric positive semi-definite submatrices 
 
@@ -63,17 +63,21 @@ class PCBNN(object):
         self.addCS = OptDB.getBool('PCBNN_addCoarseSolve', False) 
         self.projCS = OptDB.getBool('PCBNN_CoarseProjection', True) 
 
-        # convert matis to mpiaij, extract local matrices
-        r, _ = A.getLGMap()
+        #extract Neumann matrix from A in IS format
+        Ms = A_IS.copy().getISLocalMat() 
+      
+        # convert A_IS from matis to mpiaij
+        A_mpiaij = A_IS.convertISToAIJ()
+        r, _ = A_mpiaij.getLGMap() #r, _ = A_IS.getLGMap()
         is_A = PETSc.IS().createGeneral(r.indices)
-        A_mpiaij = A.convertISToAIJ()
-        A_mpiaij_local = A_mpiaij.createSubMatrices(is_A)[0]
-        A_scaled = A.copy().getISLocalMat()
-        vglobal, _ = A.getVecs()
-        vlocal, _ = A_scaled.getVecs()
+        # extract exact local solver 
+        As = A_mpiaij.createSubMatrices(is_A)[0] 
+
+        vglobal, _ = A_mpiaij.getVecs()
+        vlocal, _ = Ms.getVecs()
         scatter_l2g = PETSc.Scatter().create(vlocal, None, vglobal, is_A)
 
-        #compute the multiplicity of each degree of freedom and max of the multiplicity
+        #compute the multiplicity of each degree 
         vlocal.set(1.) 
         vglobal.set(0.) 
         scatter_l2g(vlocal, vglobal, PETSc.InsertMode.ADD_VALUES)
@@ -82,34 +86,34 @@ class PCBNN(object):
 
         # k-scaling or multiplicity scaling of the local (non-assembled) matrix
         if self.kscaling == False:
-            A_scaled.diagonalScale(vlocal,vlocal)
+            Ms.diagonalScale(vlocal,vlocal)
         else:
-            v1 = A_mpiaij_local.getDiagonal()
-            v2 = A_scaled.getDiagonal()
-            A_scaled.diagonalScale(v1/v2, v1/v2)
+            v1 = As.getDiagonal()
+            v2 = Ms.getDiagonal()
+            Ms.diagonalScale(v1/v2, v1/v2)
 
         # the default local solver is the scaled non assembled local matrix (as in BNN)
         if self.switchtoASM:
-            Alocal = A_mpiaij_local
+            Atildes = As
             if mpi.COMM_WORLD.rank == 0:
                 print('The user has chosen to switch to Additive Schwarz instead of BNN.')
         else: #(default)
-            Alocal = A_scaled
-        localksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
-        localksp.setOptionsPrefix("localksp_") 
-        localksp.setOperators(Alocal)
-        localksp.setType('preonly')
-        localpc = localksp.getPC()
-        localpc.setType('cholesky')
-        localpc.setFactorSolverType('mumps')
-        localksp.setFromOptions()
+            Atildes = Ms
+        ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+        ksp_Atildes.setOptionsPrefix("ksp_Atildes_") 
+        ksp_Atildes.setOperators(Atildes)
+        ksp_Atildes.setType('preonly')
+        pc_Atildes = ksp_Atildes.getPC()
+        pc_Atildes.setType('cholesky')
+        pc_Atildes.setFactorSolverType('mumps')
+        ksp_Atildes.setFromOptions()
 
-        self.A = A
-        self.A_scaled = A_scaled
-        self.A_mpiaij_local = A_mpiaij_local
-        self.localksp = localksp
-        self.workl_1 = vlocal.copy()
-        self.workl_2 = self.workl_1.copy()
+        self.A = A_mpiaij
+        self.Ms = Ms
+        self.As = As
+        self.ksp_Atildes = ksp_Atildes
+        self.works_1 = vlocal.copy()
+        self.works_2 = self.works_1.copy()
         self.scatter_l2g = scatter_l2g 
         self.mult_max = mult_max
 
@@ -129,13 +133,24 @@ class PCBNN(object):
             The vector that stores the result of the preconditioning operation. 
 
         """
-        self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
-        self.localksp.solve(self.workl_1, self.workl_2)
+########################
+########################
+        xd = x.copy()
+        if self.projCS == True:  
+            self.proj.project_transpose(xd)
+
+        self.scatter_l2g(xd, self.works_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.ksp_Atildes.solve(self.works_1, self.works_2)
 
         y.set(0.)
-        self.scatter_l2g(self.workl_2, y, PETSc.InsertMode.ADD_VALUES)
+        self.scatter_l2g(self.works_2, y, PETSc.InsertMode.ADD_VALUES)
         if self.projCS == True: 
             self.proj.project(y)
+
+        if self.addCS == True:  
+            xd = x.copy()
+            ytild = self.proj.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
+            y += ytild
 
     def MP_mult(self, x, y):
         """
@@ -151,14 +166,14 @@ class PCBNN(object):
             The list of ndom vectors that stores the result of the multipreconditioning operation (one vector per subdomain). 
 
         """
-        self.scatter_l2g(x, self.workl_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
-        self.localksp.solve(self.workl_1, self.workl_2)
+        self.scatter_l2g(x, self.works_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.ksp_Atildes.solve(self.works_1, self.works_2)
         for i in range(mpi.COMM_WORLD.size):
-            self.workl_1.set(0)
+            self.works_1.set(0)
             if mpi.COMM_WORLD.rank == i:
-                self.workl_1 = self.workl_2.copy()
+                self.works_1 = self.works_2.copy()
             y[i].set(0.)
-            self.scatter_l2g(self.workl_1, y[i], PETSc.InsertMode.ADD_VALUES)
+            self.scatter_l2g(self.works_1, y[i], PETSc.InsertMode.ADD_VALUES)
             self.proj.project(y[i])
 
     def apply(self, pc, x, y):
@@ -179,17 +194,6 @@ class PCBNN(object):
             The vector that stores the result of the preconditioning operation. 
 
         """
-        xd = x.copy()
-        if self.projCS == True:  
-            self.proj.project_transpose(xd)
-        self.mult(xd,y)
-        if self.addCS == True:  
-            xd = x.copy()
-            ytild = self.proj.coarse_init(xd)
-            #tempxd = xd.dot(xd)
-            #print(f'tempxd : {tempxd}')
-            #tempytild = ytild.dot(ytild)
-            #print(f'tempytild : {tempytild}')
-            y += ytild
+        self.mult(x,y)
 
 

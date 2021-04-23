@@ -62,37 +62,37 @@ class projection(object):
         self.comm = mpi.COMM_SELF
         self.mumpsCntl3 = OptDB.getReal('PCBNN_mumpsCntl3', 1e-6)
 
-        vglobal, _ = PCBNN.A.getVecs()
-        vlocal, _ = PCBNN.A_scaled.getVecs()
 
         self.scatter_l2g = PCBNN.scatter_l2g 
         self.A = PCBNN.A
-        self.A_scaled = PCBNN.A_scaled
-        self.A_mpiaij_local = PCBNN.A_mpiaij_local
+        self.Ms = PCBNN.Ms
+        self.As = PCBNN.As
+        self.mult_max = PCBNN.mult_max
         self.verbose = PCBNN.verbose
 
-        workl, _ = self.A_scaled.getVecs()
-        self.workl = workl
+        self.ksp_Atildes = PCBNN.ksp_Atildes
+        _,Atildes = self.ksp_Atildes.getOperators() 
+        self.Atildes = Atildes
 
-        self.ksp = PCBNN.localksp
-        _,Alocal = self.ksp.getOperators() 
-        self.Alocal = Alocal
+        works, _ = self.Ms.getVecs()
+        self.works = works
 
-        if self.ksp.pc.getFactorSolverType() == 'mumps':
-            self.ksp.pc.setFactorSetUpSolverType()
-            F = self.ksp.pc.getFactorMatrix()
+#compute the kernel of the self.ksp_Atildes operator and initialize local coarse space with it
+        if self.ksp_Atildes.pc.getFactorSolverType() == 'mumps':
+            self.ksp_Atildes.pc.setFactorSetUpSolverType()
+            F = self.ksp_Atildes.pc.getFactorMatrix()
             F.setMumpsIcntl(7, 2)
             F.setMumpsIcntl(24, 1)
             F.setMumpsCntl(3, self.mumpsCntl3)
-            self.ksp.pc.setUp()
+            self.ksp_Atildes.pc.setUp()
             nrb = F.getMumpsInfog(28)
 
             rbm_vecs = []
             for i in range(nrb):
                 F.setMumpsIcntl(25, i+1)
-                workl.set(0.)
-                self.ksp.solve(workl, workl)
-                rbm_vecs.append(workl.copy())
+                works.set(0.)
+                self.ksp_Atildes.solve(works, works)
+                rbm_vecs.append(works.copy())
             
             F.setMumpsIcntl(25, 0)
             if self.verbose:
@@ -106,15 +106,15 @@ class projection(object):
             #thresholds for the eigenvalue problems are computed from the user chosen targets for eigmin and eigmax
             tau_eigmin = self.eigmin
             if self.eigmax > 0:
-                tau_eigmax = PCBNN.mult_max/self.eigmax 
+                tau_eigmax = self.mult_max/self.eigmax 
             else:
                 tau_eigmax = 0 
-            if self.Alocal != self.A_mpiaij_local:
+            if self.Atildes != self.As:
                 self.solve_GenEO_eigmax(rbm_vecs, tau_eigmax)
             else:
                 if self.verbose:
-                    PETSc.Sys.Print('This is classical additive Schwarz so eigmax = {}, no eigenvalue problem will be solved for eigmax'.format(PCBNN.mult_max), comm=mpi.COMM_WORLD)
-            if self.Alocal != self.A_scaled:
+                    PETSc.Sys.Print('This is classical additive Schwarz so eigmax = {} (+1 if fully additive preconditioner), no eigenvalue problem will be solved for eigmax'.format(self.mult_max), comm=mpi.COMM_WORLD)
+            if self.Atildes != self.Ms:
                 self.solve_GenEO_eigmin(rbm_vecs, tau_eigmin)
             else:
                 if self.verbose:
@@ -151,14 +151,14 @@ class projection(object):
             eps.setDimensions(nev=self.nev)
 
             eps.setProblemType(SLEPc.EPS.ProblemType.GHIEP)
-            eps.setOperators(self.Alocal , self.A_mpiaij_local )
+            eps.setOperators(self.Atildes , self.As )
             eps.setWhichEigenpairs(SLEPc.EPS.Which.TARGET_REAL)
             eps.setTarget(0.)
             if len(rbm_vecs) > 0 :
                 eps.setDeflationSpace(rbm_vecs)
             ST = eps.getST()
             ST.setType("sinvert") 
-            ST.setKSP(self.ksp) 
+            ST.setKSP(self.ksp_Atildes) 
             eps.solve()
             if eps.getConverged() < self.nev:
                 PETSc.Sys.Print('WARNING: Only {} eigenvalues converged for GenEO_eigmax in subdomain {} whereas {} were requested'.format(eps.getConverged(), mpi.COMM_WORLD.rank, self.nev), comm=self.comm)
@@ -167,7 +167,7 @@ class projection(object):
 
             for i in range(min(eps.getConverged(),self.maxev)):
                 if(abs(eps.getEigenvalue(i))<tauGenEO_eigmax): #TODO tell slepc that the eigenvalues are real
-                    rbm_vecs.append(self.workl.duplicate())
+                    rbm_vecs.append(self.works.duplicate())
                     eps.getEigenvector(i,rbm_vecs[-1])
                     if self.verbose:
                         PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i)) , comm=self.comm)
@@ -175,7 +175,7 @@ class projection(object):
                     if self.verbose:
                         PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i), tauGenEO_eigmax), comm=self.comm)
 
-            self.eps_eigmax=eps #TODO FIX the only reason for this line is to make sure self.ksp and hence PCBNN.ksp is not destroyed  
+            self.eps_eigmax=eps #TODO FIX the only reason for this line is to make sure self.ksp_Atildes and hence PCBNN.ksp is not destroyed  
         if self.verbose:
             PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors after first GenEO'.format(mpi.COMM_WORLD.rank, len(rbm_vecs)), comm=self.comm)
     
@@ -194,9 +194,9 @@ class projection(object):
 
         """
         if tauGenEO_eigmin > 0:
-            #to compute the smallest eigenvalues of the preconditioned matrix, A_scaled must be factorized
+            #to compute the smallest eigenvalues of the preconditioned matrix, Ms must be factorized
             tempksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
-            tempksp.setOperators(self.A_scaled)
+            tempksp.setOperators(self.Ms)
             tempksp.setType('preonly')
             temppc = tempksp.getPC()
             temppc.setType('cholesky')
@@ -211,9 +211,9 @@ class projection(object):
 
             for i in range(tempnrb):
                 tempF.setMumpsIcntl(25, i+1)
-                self.workl.set(0.)
-                tempksp.solve(self.workl, self.workl)
-                rbm_vecs.append(self.workl.copy())
+                self.works.set(0.)
+                tempksp.solve(self.works, self.works)
+                rbm_vecs.append(self.works.copy())
             
             tempF.setMumpsIcntl(25, 0)
             if self.verbose:
@@ -224,7 +224,7 @@ class projection(object):
             eps.setDimensions(nev=self.nev)
 
             eps.setProblemType(SLEPc.EPS.ProblemType.GHIEP)
-            eps.setOperators(self.A_scaled,self.Alocal)
+            eps.setOperators(self.Ms,self.Atildes)
             eps.setWhichEigenpairs(SLEPc.EPS.Which.TARGET_REAL)
             eps.setTarget(0.)
             ST = eps.getST()
@@ -239,14 +239,14 @@ class projection(object):
                 PETSc.Sys.Print('WARNING: Only {} eigenvalues converged for GenEO_eigmin in subdomain {} whereas {} were requested'.format(eps.getConverged(), mpi.COMM_WORLD.rank, self.nev), comm=self.comm)
             for i in range(min(eps.getConverged(),self.maxev)):
                 if(abs(eps.getEigenvalue(i))<tauGenEO_eigmin): #TODO tell slepc that the eigenvalues are real
-                   rbm_vecs.append(self.workl.duplicate())
+                   rbm_vecs.append(self.works.duplicate())
                    eps.getEigenvector(i,rbm_vecs[-1])
                    if self.verbose:
                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i)), comm=self.comm)
                 else:
                     if self.verbose:
                         PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i), tauGenEO_eigmin), comm=self.comm)
-            self.eps_eigmin=eps #the only reason for this line is to make sure self.ksp and hence PCBNN.ksp is not destroyed  
+            self.eps_eigmin=eps #the only reason for this line is to make sure self.ksp_Atildes and hence PCBNN.ksp is not destroyed  
 
     def assemble_coarse_operators(self,rbm_vecs):
         """
@@ -288,20 +288,20 @@ class projection(object):
         work, _ = self.A.getVecs()
         for vec in coarse_vecs:
             if vec:
-                self.workl = vec.copy()
+                self.works = vec.copy()
             else:
-                self.workl.set(0.)
+                self.works.set(0.)
             work.set(0)
-            self.scatter_l2g(self.workl, work, PETSc.InsertMode.ADD_VALUES)
+            self.scatter_l2g(self.works, work, PETSc.InsertMode.ADD_VALUES)
             coarse_Avecs.append(self.A*work)
-            self.scatter_l2g(coarse_Avecs[-1], self.workl, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+            self.scatter_l2g(coarse_Avecs[-1], self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
             if vec:
-                vec.scale(1./np.sqrt(vec.dot(self.workl)))
-                self.workl = vec.copy()
+                vec.scale(1./np.sqrt(vec.dot(self.works)))
+                self.works = vec.copy()
             else:
-                self.workl.set(0)
+                self.works.set(0)
             work.set(0)
-            self.scatter_l2g(self.workl, work, PETSc.InsertMode.ADD_VALUES)
+            self.scatter_l2g(self.works, work, PETSc.InsertMode.ADD_VALUES)
             coarse_Avecs[-1] = self.A*work
  
         PETSc.Sys.Print('There are {} vectors in the coarse space.'.format(len(coarse_vecs)), comm=mpi.COMM_WORLD)
@@ -314,12 +314,12 @@ class projection(object):
         Delta.setPreallocationDense(None)
         for i, vec in enumerate(coarse_vecs):
             if vec:
-                self.workl = vec.copy()
+                self.works = vec.copy()
             else:
-                self.workl.set(0)
+                self.works.set(0)
 
             work.set(0)
-            self.scatter_l2g(self.workl, work, PETSc.InsertMode.ADD_VALUES)
+            self.scatter_l2g(self.works, work, PETSc.InsertMode.ADD_VALUES)
             for j in range(i+1):
                 tmp = coarse_Avecs[j].dot(work)
                 Delta[i, j] = tmp
@@ -350,12 +350,12 @@ class projection(object):
 
         self.ksp_Delta.solve(self.gamma, alpha)
 
-        self.workl.set(0)
+        self.works.set(0)
         for i, vec in enumerate(self.coarse_vecs):
             if vec:
-                self.workl.axpy(-alpha[i], vec)
+                self.works.axpy(-alpha[i], vec)
 
-        self.scatter_l2g(self.workl, x, PETSc.InsertMode.ADD_VALUES)
+        self.scatter_l2g(self.works, x, PETSc.InsertMode.ADD_VALUES)
 
     def coarse_init(self, rhs): 
         """
@@ -377,25 +377,25 @@ class projection(object):
 
         alpha = self.gamma.duplicate()
 
-        self.scatter_l2g(rhs, self.workl, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.scatter_l2g(rhs, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         self.gamma.set(0)
         self.gamma_tmp.set(0)
         for i, vec in enumerate(self.coarse_vecs):
             if vec:
-                self.gamma_tmp[i] = vec.dot(self.workl)
+                self.gamma_tmp[i] = vec.dot(self.works)
 
         mpi.COMM_WORLD.Allreduce([self.gamma_tmp, mpi.DOUBLE], [self.gamma, mpi.DOUBLE], mpi.SUM)
 
         self.ksp_Delta.solve(self.gamma, alpha)
         
-        self.workl.set(0)
+        self.works.set(0)
         for i, vec in enumerate(self.coarse_vecs):
             if vec:
-                self.workl.axpy(alpha[i], vec)
+                self.works.axpy(alpha[i], vec)
 
         out = rhs.duplicate()
         out.set(0)
-        self.scatter_l2g(self.workl, out, PETSc.InsertMode.ADD_VALUES)
+        self.scatter_l2g(self.works, out, PETSc.InsertMode.ADD_VALUES)
         return out
 
     def project_transpose(self, x):
@@ -411,12 +411,12 @@ class projection(object):
         """
         alpha = self.gamma.duplicate()
 
-        self.scatter_l2g(x, self.workl, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.scatter_l2g(x, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         self.gamma.set(0)
         self.gamma_tmp.set(0)
         for i, vec in enumerate(self.coarse_vecs):
             if vec:
-                self.gamma_tmp[i] = vec.dot(self.workl)
+                self.gamma_tmp[i] = vec.dot(self.works)
 
         mpi.COMM_WORLD.Allreduce([self.gamma_tmp, mpi.DOUBLE], [self.gamma, mpi.DOUBLE], mpi.SUM)
         self.ksp_Delta.solve(self.gamma, alpha)

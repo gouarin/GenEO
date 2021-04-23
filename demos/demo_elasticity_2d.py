@@ -68,13 +68,13 @@ class callback:
             work, _ = proj.A.getVecs()
             for i, vec in enumerate(proj.coarse_vecs):
                 if vec:
-                    proj.workl = vec.copy()
+                    proj.works = vec.copy()
                 else:
-                    proj.workl.set(0.)
+                    proj.works.set(0.)
                 work.set(0)
-                proj.scatter_l2g(proj.workl, work, PETSc.InsertMode.ADD_VALUES)
+                proj.scatter_l2g(proj.works, work, PETSc.InsertMode.ADD_VALUES)
 
-                viewer = PETSc.Viewer().createVTK('coarse_vec_{}.vts'.format(i), 'w', comm = PETSc.COMM_WORLD)
+                viewer = PETSc.Viewer().createVTK('output.d/coarse_vec_{}.vts'.format(i), 'w', comm = PETSc.COMM_WORLD)
                 tmp = self.da.createGlobalVec()
                 tmpl_a = self.da.getVecArray(tmp)
                 work_a = self.da.getVecArray(work)
