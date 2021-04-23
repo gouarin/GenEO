@@ -6,7 +6,7 @@
 from .assembling import buildElasticityMatrix
 from .bc import bcApplyWestMat, bcApplyWest_vec
 from .cg import cg
-from .projection import projection
+from .projection import projection, GenEO_V0, minimal_V0, coarse_operators
 from petsc4py import PETSc
 from slepc4py import SLEPc
 import mpi4py.MPI as mpi
@@ -45,6 +45,10 @@ class PCBNN(object): #Neumann-Neumann and Additive Scharz with no overlap
             Default is False.
             If True, some information about the preconditioners is printed when the code is executed.
 
+        PCBNN_GenEO : Bool
+        Default is False. 
+        If True then the coarse space is enriched by solving local generalized eigenvalue problems. 
+
         PCBNN_CoarseProjection :True 
             Default is True
             If False then there is no coarse projection: Two level Additive Schwarz or One-level preconditioner depending on PCBNN_addCoarseSolve
@@ -60,6 +64,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Scharz with no overlap
         self.switchtoASM = OptDB.getBool('PCBNN_switchtoASM', False) #use Additive Schwarz as a preconditioner instead of BNN
         self.kscaling = OptDB.getBool('PCBNN_kscaling', True) #kscaling if true, multiplicity scaling if false
         self.verbose = OptDB.getBool('PCBNN_verbose', False) 
+        self.GenEO = OptDB.getBool('PCBNN_GenEO', True)
         self.addCS = OptDB.getBool('PCBNN_addCoarseSolve', False) 
         self.projCS = OptDB.getBool('PCBNN_CoarseProjection', True) 
 
@@ -117,7 +122,15 @@ class PCBNN(object): #Neumann-Neumann and Additive Scharz with no overlap
         self.scatter_l2g = scatter_l2g 
         self.mult_max = mult_max
 
-        self.proj = projection(self)
+        self.minV0 = minimal_V0(self.ksp_Atildes)
+        if self.GenEO == True:
+          GenEOV0 = GenEO_V0(self.ksp_Atildes,self.Ms,self.As,self.mult_max,self.minV0.V0s) 
+          self.V0s = GenEOV0.V0s
+        else:
+          self.V0s = self.minV0.V0s
+        self.proj = coarse_operators(self.V0s,self.A,self.scatter_l2g,vlocal)
+        
+        #self.proj = projection(self)
         
     def mult(self, x, y):
         """

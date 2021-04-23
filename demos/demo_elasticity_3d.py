@@ -56,7 +56,7 @@ class callback:
 
         if self.it == 0:
             work, _ = proj.A.getVecs()
-            for i, vec in enumerate(proj.coarse_vecs):
+            for i, vec in enumerate(proj.V0):
                 if vec:
                     proj.works = vec.copy()
                 else:

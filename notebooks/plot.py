@@ -71,10 +71,10 @@ def get_faces_and_edges(index):
 
 
 def plot_solution(path, filename):
-    coarse_vecs = []
+    V0 = []
     coarse_files = glob(path + '/coarse_vec*.vts')
     for i in range(len(coarse_files)):
-        coarse_vecs.append(read_coarse_vec(path + '/coarse_vec_{}.vts'.format(i)))
+        V0.append(read_coarse_vec(path + '/coarse_vec_{}.vts'.format(i)))
 
     cg_ites = []
     cg_files = glob(path + '/cg_ite_*.vts')
@@ -148,13 +148,13 @@ def plot_solution(path, filename):
     select_dom = widgets.Dropdown(options=domain,
       value=-1,
       description='domains')
-    coarse_vecs_label = OrderedDict({'none': -1})
-    for i in range(len(coarse_vecs)):
-        coarse_vecs_label[('coarse vec {}').format(i)] = i
+    V0_label = OrderedDict({'none': -1})
+    for i in range(len(V0)):
+        V0_label[('coarse vec {}').format(i)] = i
     for i in range(len(cg_ites)):
-        coarse_vecs_label[('cg iteration {}').format(i)] = len(coarse_vecs) + i
+        V0_label[('cg iteration {}').format(i)] = len(V0) + i
 
-    select_coarse_vecs = widgets.Dropdown(options=coarse_vecs_label,
+    select_V0 = widgets.Dropdown(options=V0_label,
       value=-1,
       description='coarse vecs')
     show_displacement = widgets.Checkbox(value=False,
@@ -179,17 +179,17 @@ def plot_solution(path, filename):
         rank = select_dom.value
         work[:] = coords
         if show_displacement.value:
-            if select_coarse_vecs.value == -1:
+            if select_V0.value == -1:
                 for i in range(dim):
                     work[(..., i)] += scale.value * numpy_arrays[i]
 
             else:
-                if select_coarse_vecs.value < len(coarse_vecs):
+                if select_V0.value < len(V0):
                     for i in range(dim):
-                        work[(..., i)] += scale.value * coarse_vecs[select_coarse_vecs.value][i]
+                        work[(..., i)] += scale.value * V0[select_V0.value][i]
                 else:
                     for i in range(dim):
-                        work[(..., i)] += scale.value * cg_ites[select_coarse_vecs.value-len(coarse_vecs)][i]
+                        work[(..., i)] += scale.value * cg_ites[select_V0.value-len(V0)][i]
 
         if rank >= 0:
             new_coords = work[faces_by_rank[rank]].reshape(-1, 3)
@@ -211,10 +211,10 @@ def plot_solution(path, filename):
 
     select.observe(update_domain, names=['value'])
     select_dom.observe(update_domain, names=['value'])
-    select_coarse_vecs.observe(update_domain, names=['value'])
+    select_V0.observe(update_domain, names=['value'])
     scale.observe(update_domain, names=['value'])
     show_displacement.observe(update_domain, names=['value'])
     show_mesh.observe(draw_mesh, names=['value'])
     show_displacement.value = True
-    return widgets.HBox([renderer, widgets.VBox([select, select_dom, select_coarse_vecs, show_displacement, show_mesh, scale])])
+    return widgets.HBox([renderer, widgets.VBox([select, select_dom, select_V0, show_displacement, show_mesh, scale])])
 # okay decompiling plot.cpython-36.pyc

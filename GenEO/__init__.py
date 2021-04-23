@@ -8,5 +8,5 @@ from .bc import bcApplyWest, bcApplyEast, bcApplyWest_vec
 from .rhs import buildRHS
 from .utils import buildVecWithFunction, buildCellArrayWithFunction
 from .precond import PCBNN 
-from .projection import projection
+from .projection import projection, GenEO_V0, minimal_V0, coarse_operators
 from .cg import cg, KSP_PCG, KSP_AMPCG
