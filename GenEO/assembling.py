@@ -128,7 +128,7 @@ def buildElasticityMatrix(da, h, lamb, mu):
 
 def buildIdentityMatrix(da):
     """
-    Assemble the matrix of the elasticity operator
+    Assemble the matrix of the identity operator
     using Q1 finite elements.
 
     Parameters
@@ -141,14 +141,17 @@ def buildIdentityMatrix(da):
     =======
 
     A: petsc.Mat
-        The matrix of the elasticity operator.
+        The identity matrix.
 
     """
     A = da.createMatrix()
     elem = da.getElements()
 
     dof = da.getDof()
-    Melem = np.eye(8)
+    if da.getDim() == 2:
+      Melem = np.eye(8)
+    else:
+      Melem = np.eye(24)
     for e in elem:
         ind = getIndices(e, dof)
         A.setValuesLocal(ind, ind, Melem, PETSc.InsertMode.INSERT_VALUES)
