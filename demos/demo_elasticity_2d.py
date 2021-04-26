@@ -40,11 +40,11 @@ def lame_coeff(x, y, v1, v2):
     output[np.logical_not(mask)] = v2
     return output
 
-# non constant Young's modulus and Poisson's ratio 
+# non constant Young's modulus and Poisson's ratio
 E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2))
 nu = buildCellArrayWithFunction(da, lame_coeff, (nu1,nu2))
 
-lamb = (nu*E)/((1+nu)*(1-2*nu)) 
+lamb = (nu*E)/((1+nu)*(1-2*nu))
 mu = .5*E/(1+nu)
 
 class callback:
@@ -52,7 +52,7 @@ class callback:
         self.da = da
         ranges = da.getRanges()
         ghost_ranges = da.getGhostRanges()
-        
+
         self.slices = []
         for r, gr in zip(ranges, ghost_ranges):
             self.slices.append(slice(gr[0], r[1]))
@@ -88,26 +88,57 @@ x = da.createGlobalVec()
 b = buildRHS(da, [hx, hy], rhs)
 A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
 A.assemble()
-bcApplyWest(da, A, b)
 
-#Setup the preconditioner (or multipreconditioner) and the coarse space
-pcbnn = PCBNN(A)
+Ms = A.getISLocalMat()
+Bs = A.copy()
+Bsl = Bs.getISLocalMat()
 
-# Set initial guess
-x.setRandom()
-xnorm = b.dot(x)/x.dot(A*x)
-x *= xnorm
+print(Ms.getSize())
+for i in range(Ms.getSize()[0]):
+    col, _ = Ms.getRow(i)
+    Bsl.setValues([i], col, np.ones_like(col))
+Bs.restoreISLocalMat(Bsl)
+Bs.assemble()
+Bs = Bs.convert('mpiaij')
 
-ksp = PETSc.KSP().create()
-ksp.setOperators(A)
-ksp.setType(ksp.Type.PYTHON)
-pyKSP = KSP_AMPCG(pcbnn)
-pyKSP.callback = callback(da)
-ksp.setPythonContext(pyKSP)
-ksp.setFromOptions()
-ksp.setInitialGuessNonzero(True)
+A = A.convert('mpiaij')
+As = A.duplicate()
+for i in range(*A.getOwnershipRange()):
+    a_cols, a_values = A.getRow(i)
+    _, bs_values = Bs.getRow(i)
+    As.setValues([i], a_cols, a_values/bs_values, PETSc.InsertMode.INSERT_VALUES)
 
-ksp.solve(b, x)
+As.assemble()
+# As.view()
 
-viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
-x.view(viewer)
+As_local = As.
+A.view()
+
+# (A - As).view()
+# data = Ms.getArray()
+# if mpi.COMM_WORLD.rank == 0:
+#     print(dir(Ms))
+#     print(type(Ms), Ms.getType())
+# bcApplyWest(da, A, b)
+
+# #Setup the preconditioner (or multipreconditioner) and the coarse space
+# pcbnn = PCBNN(A)
+
+# # Set initial guess
+# x.setRandom()
+# xnorm = b.dot(x)/x.dot(A*x)
+# x *= xnorm
+
+# ksp = PETSc.KSP().create()
+# ksp.setOperators(A)
+# ksp.setType(ksp.Type.PYTHON)
+# pyKSP = KSP_AMPCG(pcbnn)
+# pyKSP.callback = callback(da)
+# ksp.setPythonContext(pyKSP)
+# ksp.setFromOptions()
+# ksp.setInitialGuessNonzero(True)
+
+# ksp.solve(b, x)
+
+# viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
+# x.view(viewer)
