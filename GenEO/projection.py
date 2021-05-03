@@ -281,7 +281,7 @@ class GenEO_V0(object):
             self.eps_eigmin=eps #the only reason for this line is to make sure self.ksp_Atildes and hence PCBNN.ksp is not destroyed  
 
 class coarse_operators(object):
-    def __init__(self,V0s,A,scatter_l2g,works): 
+    def __init__(self,V0s,A,scatter_l2g,works,work): 
         """
         PCBNN_verbose : Bool
             Default is False.
@@ -295,8 +295,11 @@ class coarse_operators(object):
         self.scatter_l2g = scatter_l2g 
         self.A = A
         self.works = works
+        self.work = work
 
         V0, AV0, Delta, ksp_Delta = self.assemble_coarse_operators(V0s)
+        #if mpi.COMM_WORLD.rank == 0:
+        #    Delta.view() 
 
         self.V0 = V0
         self.AV0 = AV0
@@ -338,6 +341,7 @@ class coarse_operators(object):
             PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors in total'.format(mpi.COMM_WORLD.rank, len(V0s)), comm=self.comm)
 
         V0 = []
+        self.work2 = self.work.duplicate()
         for i in range(mpi.COMM_WORLD.size):
             nrbl = len(V0s) if i == mpi.COMM_WORLD.rank else None
             nrbl = mpi.COMM_WORLD.bcast(nrbl, root=i)
@@ -345,25 +349,39 @@ class coarse_operators(object):
                 V0.append(V0s[irbm] if i == mpi.COMM_WORLD.rank else None)
 
         AV0 = []
-        work, _ = self.A.getVecs()
         for vec in V0:
             if vec:
                 self.works = vec.copy()
             else:
                 self.works.set(0.)
-            work.set(0)
-            self.scatter_l2g(self.works, work, PETSc.InsertMode.ADD_VALUES)
-            AV0.append(self.A*work)
+            self.work.set(0)
+            self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
+            #debug1 = np.sqrt(self.work.dot(self.work))
+            #debug4 = self.work.norm()
+            #debug3 = np.sqrt(self.works.dot(self.works))
+            #debug5 = self.works.norm()
+            #print(f'normworks {debug3} = {debug5} normwork {debug1} = {debug4}')
+            self.A.mult(self.work,self.work2)
+            AV0.append(self.work2.copy())
             self.scatter_l2g(AV0[-1], self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
             if vec:
                 vec.scale(1./np.sqrt(vec.dot(self.works)))
                 self.works = vec.copy()
             else:
                 self.works.set(0)
-            work.set(0)
-            self.scatter_l2g(self.works, work, PETSc.InsertMode.ADD_VALUES)
-            AV0[-1] = self.A*work
- 
+            self.work.set(0)
+            self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
+            self.A.mult(self.work,self.work2)
+            AV0[-1] = self.work2.copy() 
+            debug6 = np.sqrt(self.work2.dot(self.work2))
+            debug7 = self.work2.norm()
+            debug2 = np.sqrt(AV0[-1].dot(AV0[-1]))
+            debug5 = AV0[-1].norm()
+#            if mpi.COMM_WORLD.rank == 0:
+#                print(f'norm Acoarsevec {debug2} = {debug5}')
+            #print(f'norm Acoarsevec {debug2} = {debug5} = {debug6} = {debug7}')
+            
+
         PETSc.Sys.Print('There are {} vectors in the coarse space.'.format(len(V0)), comm=mpi.COMM_WORLD)
 
         #Define, fill and factorize coarse problem matrix
@@ -378,12 +396,13 @@ class coarse_operators(object):
             else:
                 self.works.set(0)
 
-            work.set(0)
-            self.scatter_l2g(self.works, work, PETSc.InsertMode.ADD_VALUES)
+            self.work.set(0)
+            self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
             for j in range(i+1):
-                tmp = AV0[j].dot(work)
+                tmp = AV0[j].dot(self.work)
                 Delta[i, j] = tmp
                 Delta[j, i] = tmp
+                #print(f'i j Deltaij: {i} {j} {tmp}')
         Delta.assemble()
         ksp_Delta = PETSc.KSP().create(comm=PETSc.COMM_SELF)
         ksp_Delta.setOperators(Delta)
@@ -761,7 +780,7 @@ class projection(object):
                 V0.append(V0s[irbm] if i == mpi.COMM_WORLD.rank else None)
 
         AV0 = []
-        work, _ = self.A.getVecs()
+        work, _ = self.work
         for vec in V0:
             if vec:
                 self.works = vec.copy()
@@ -800,6 +819,7 @@ class projection(object):
                 tmp = AV0[j].dot(work)
                 Delta[i, j] = tmp
                 Delta[j, i] = tmp
+                #print(f'i j Deltaij: {i} {j} {tmp}')
         Delta.assemble()
         ksp_Delta = PETSc.KSP().create(comm=PETSc.COMM_SELF)
         ksp_Delta.setOperators(Delta)

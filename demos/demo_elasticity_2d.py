@@ -21,8 +21,8 @@ Ly = OptDB.getInt('Ly', 1)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n)
 ny = OptDB.getInt('ny', Ly*n)
-E1 = OptDB.getReal('E1', 10**6)
-E2 = OptDB.getReal('E2', 1)
+E1 = OptDB.getReal('E1', 10**9)
+E2 = OptDB.getReal('E2', 10**6)
 nu1 = OptDB.getReal('nu1', 0.4)
 nu2 = OptDB.getReal('nu2', 0.4)
 
@@ -88,57 +88,26 @@ x = da.createGlobalVec()
 b = buildRHS(da, [hx, hy], rhs)
 A = buildElasticityMatrix(da, [hx, hy], lamb, mu)
 A.assemble()
+bcApplyWest(da, A, b)
 
-Ms = A.getISLocalMat()
-Bs = A.copy()
-Bsl = Bs.getISLocalMat()
+#Setup the preconditioner (or multipreconditioner) and the coarse space
+pcbnn = PCBNN(A)
 
-print(Ms.getSize())
-for i in range(Ms.getSize()[0]):
-    col, _ = Ms.getRow(i)
-    Bsl.setValues([i], col, np.ones_like(col))
-Bs.restoreISLocalMat(Bsl)
-Bs.assemble()
-Bs = Bs.convert('mpiaij')
+# Set initial guess
+x.setRandom()
+xnorm = b.dot(x)/x.dot(A*x)
+x *= xnorm
 
-A = A.convert('mpiaij')
-As = A.duplicate()
-for i in range(*A.getOwnershipRange()):
-    a_cols, a_values = A.getRow(i)
-    _, bs_values = Bs.getRow(i)
-    As.setValues([i], a_cols, a_values/bs_values, PETSc.InsertMode.INSERT_VALUES)
+ksp = PETSc.KSP().create()
+ksp.setOperators(A)
+ksp.setType(ksp.Type.PYTHON)
+pyKSP = KSP_AMPCG(pcbnn)
+pyKSP.callback = callback(da)
+ksp.setPythonContext(pyKSP)
+ksp.setFromOptions()
+ksp.setInitialGuessNonzero(True)
 
-As.assemble()
-# As.view()
+#ksp.solve(b, x)
 
-As_local = As.
-A.view()
-
-# (A - As).view()
-# data = Ms.getArray()
-# if mpi.COMM_WORLD.rank == 0:
-#     print(dir(Ms))
-#     print(type(Ms), Ms.getType())
-# bcApplyWest(da, A, b)
-
-# #Setup the preconditioner (or multipreconditioner) and the coarse space
-# pcbnn = PCBNN(A)
-
-# # Set initial guess
-# x.setRandom()
-# xnorm = b.dot(x)/x.dot(A*x)
-# x *= xnorm
-
-# ksp = PETSc.KSP().create()
-# ksp.setOperators(A)
-# ksp.setType(ksp.Type.PYTHON)
-# pyKSP = KSP_AMPCG(pcbnn)
-# pyKSP.callback = callback(da)
-# ksp.setPythonContext(pyKSP)
-# ksp.setFromOptions()
-# ksp.setInitialGuessNonzero(True)
-
-# ksp.solve(b, x)
-
-# viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
-# x.view(viewer)
+viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
+x.view(viewer)
