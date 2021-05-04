@@ -40,11 +40,11 @@ def lame_coeff(x, y, v1, v2):
     output[np.logical_not(mask)] = v2
     return output
 
-# non constant Young's modulus and Poisson's ratio 
+# non constant Young's modulus and Poisson's ratio
 E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2))
 nu = buildCellArrayWithFunction(da, lame_coeff, (nu1,nu2))
 
-lamb = (nu*E)/((1+nu)*(1-2*nu)) 
+lamb = (nu*E)/((1+nu)*(1-2*nu))
 mu = .5*E/(1+nu)
 
 class callback:
@@ -52,7 +52,7 @@ class callback:
         self.da = da
         ranges = da.getRanges()
         ghost_ranges = da.getGhostRanges()
-        
+
         self.slices = []
         for r, gr in zip(ranges, ghost_ranges):
             self.slices.append(slice(gr[0], r[1]))
@@ -94,16 +94,18 @@ bcApplyWest(da, A, b)
 #pcbnn = PCBNN(A)
 pcbnn = PCNew(A)
 
+Apos = pcbnn.Apos
 ############compute x FOR INITIALIZATION OF PCG
 # Random initial guess
 x.setRandom()
-xnorm = b.dot(x)/x.dot(A*x)
+
+xnorm = b.dot(x)/x.dot(Apos*x)
 x *= xnorm
 
 #Pre-compute solution in coarse space
 #Required for PPCG (projected preconditioner)
 #Doesn't hurt or help the hybrid and additive preconditioners
-#the initial guess is passed to the PCG below with the option ksp.setInitialGuessNonzero(True) 
+#the initial guess is passed to the PCG below with the option ksp.setInitialGuessNonzero(True)
 pcbnn.proj.project(x)
 xtild = pcbnn.proj.coarse_init(b)
 x += xtild
@@ -111,17 +113,18 @@ x += xtild
 
 ############SETUP KSP
 ksp = PETSc.KSP().create()
-
-ksp.setOperators(A)
+ksp.setOperators(Apos)
+# ksp.setOptionsPrefix("global")
 
 pc = ksp.pc
 pc.setType('python')
 pc.setPythonContext(pcbnn)
 pc.setFromOptions()
 
+# ksp.setType("cg")
 ksp.setType(ksp.Type.PYTHON)
 pyKSP = KSP_PCG()
-#pyKSP.callback = callback(da) 
+# #pyKSP.callback = callback(da)
 ksp.setPythonContext(pyKSP)
 
 ksp.setInitialGuessNonzero(True)
@@ -129,8 +132,8 @@ ksp.setInitialGuessNonzero(True)
 ksp.setFromOptions()
 #### END SETUP KSP
 
-###### SOLVE: 
-#ksp.solve(b, x)
+###### SOLVE:
+ksp.solve(b, x)
 
 #print('I arrive here')
 

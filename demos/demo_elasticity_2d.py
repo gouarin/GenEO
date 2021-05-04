@@ -107,7 +107,7 @@ ksp.setPythonContext(pyKSP)
 ksp.setFromOptions()
 ksp.setInitialGuessNonzero(True)
 
-#ksp.solve(b, x)
+ksp.solve(b, x)
 
 viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)

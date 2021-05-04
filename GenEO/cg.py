@@ -6,6 +6,7 @@
 from petsc4py import PETSc
 import mpi4py.MPI as mpi
 from math import sqrt, inf
+import sys
 from sys import getrefcount
 import numpy as np
 from .bc import bcApplyWest_vec
@@ -34,8 +35,8 @@ class MyKSP(object):
         normType = ksp.getNormType()
         if normType == PETSc.KSP.NormType.NORM_PRECONDITIONED:
             # FIX: print a message to inform that we use the natural norm
-            norm = sqrt(r.dot(z))
-            #norm = z.norm()
+            # norm = sqrt(r.dot(z))
+            norm = z.norm()
         elif normType == PETSc.KSP.NormType.NORM_UNPRECONDITIONED:
             norm = r.norm()
         # FIX petsc4py to use it
@@ -51,7 +52,8 @@ class MyKSP(object):
         comm = ksp.comm
 
         if context.verbose:
-            output = f"\tnatural_norm -> {context.natural_norm[its]:10.8e}"
+            # output = f"\tnatural_norm -> {context.natural_norm[its]:10.8e}"
+            output = f"{norm}"
             if hasattr(context, 'ti'):
                 output += f"\n\tti -> {context.ti[its]:10.8e}"
             PETSc.Sys.Print(output, comm=comm)
@@ -65,18 +67,20 @@ class MyKSP(object):
         else:
             ksp.setConvergedReason(reason)
 
+        if its == 2:
+            sys.exit()
         return reason
 
 class KSP_AMPCG(MyKSP):
     def __init__(self, mpc):
         """
-        Initialize the AMPCG (Adaptive Multipreconditioned Conjugate Gradient) solver. 
+        Initialize the AMPCG (Adaptive Multipreconditioned Conjugate Gradient) solver.
 
         Parameters
         ==========
 
         mpc : PCBNN Object FIX ?
-            the multipreconditioner.  
+            the multipreconditioner.
 
         PETSc.Options
         =============
@@ -88,7 +92,7 @@ class KSP_AMPCG(MyKSP):
         AMPCG_tau : Real
             Default is 0.1
             This is the threshold to choose automatically between a multipreconditioned iteration and a preconditioned iteration. This automatic choice based on AMPCG_tau is only relevant to `catch' large eigenvalues of the preconditioned operator (for theoretical reasons).
-            If AMPCG_tau = 0, the algorithm will always perform a preconditioned iteration, except possibly at initialization if the user changes AMPCG_MPinitit. 
+            If AMPCG_tau = 0, the algorithm will always perform a preconditioned iteration, except possibly at initialization if the user changes AMPCG_MPinitit.
             If AMPCG_fullMP = True then the value of AMPCG_tau is discarded.
 
         AMPCG_MPinitit : Bool
@@ -97,16 +101,16 @@ class KSP_AMPCG(MyKSP):
             If AMPCG_fullMP = True then the value of AMPCG_MPinitit is discarded.
 
         AMPCG_verbose : Bool
-            Default is False. 
+            Default is False.
             If True, some information about the iterations is printed when the code is executed.
-    
+
         """
         super(KSP_AMPCG, self).__init__()
         OptDB = PETSc.Options()
-        self.tau = OptDB.getReal('AMPCG_tau', 0.1) 
-        self.MPinitit = OptDB.getBool('AMPCG_MPinitit', (self.tau>0)) 
-        self.fullMP = OptDB.getBool('AMPCG_fullMP', False) 
-        self.verbose = OptDB.getBool('AMPCG_verbose', False) 
+        self.tau = OptDB.getReal('AMPCG_tau', 0.1)
+        self.MPinitit = OptDB.getBool('AMPCG_MPinitit', (self.tau>0))
+        self.fullMP = OptDB.getBool('AMPCG_fullMP', False)
+        self.verbose = OptDB.getBool('AMPCG_verbose', False)
 
         self.mpc = mpc
         self.ti = []
@@ -114,9 +118,9 @@ class KSP_AMPCG(MyKSP):
 
     def add_vectors(self):
         """
-        Initialize a list of ndom global vectors that can be used to store the multipreconditioned residual.  
+        Initialize a list of ndom global vectors that can be used to store the multipreconditioned residual.
 
-        Returns 
+        Returns
         =======
 
         list of ndom PETSc.Vecs
@@ -126,13 +130,13 @@ class KSP_AMPCG(MyKSP):
 
     def setUp(self, ksp):
         """
-        Setup of the AMPCG Krylov Subspace Solver.  
+        Setup of the AMPCG Krylov Subspace Solver.
 
         Parameters
         ==========
 
         ksp : FIX
-            
+
         """
         super(KSP_AMPCG, self).setUp(ksp)
         self.ndom = mpi.COMM_WORLD.size
@@ -155,18 +159,18 @@ class KSP_AMPCG(MyKSP):
 
     def solve(self, ksp, b, x):
         """
-        Solve of the AMPCG Krylov Subspace Solver.  
+        Solve of the AMPCG Krylov Subspace Solver.
 
         Parameters
         ==========
 
         ksp : FIX
-            
+
         b : PETSc Vec
-            The right hand side for which to solve. 
+            The right hand side for which to solve.
 
         x : PETSc Vec
-            To store the solution. 
+            To store the solution.
 
         """
 
@@ -348,7 +352,7 @@ class KSP_PCG(MyKSP):
 
         OptDB = PETSc.Options()
         self.verbose = OptDB.getBool('PCG_verbose', False)
-        self.Ritz = OptDB.getReal('PCG_Ritz', True) 
+        self.Ritz = OptDB.getReal('PCG_Ritz', True)
         self.natural_norm = []
         if self.Ritz:
             self.alpha_save = [] #for computing the ritz values
@@ -367,30 +371,35 @@ class KSP_PCG(MyKSP):
         #
         A.mult(x, r)
         r.aypx(-1, b)
-        
+
         P.apply(r, z)
 
         z.copy(p)
         delta_0 = r.dot(z)
         delta = delta_0
-        natural_norm = sqrt(r.dot(z))
-        self.natural_norm.append(natural_norm)
+        # natural_norm = sqrt(r.dot(z))
+        # self.natural_norm.append(natural_norm)
 
         ite = 0
         if mpi.COMM_WORLD.rank == 0:
             print(f'ite: {ite} residual -> {delta}')
-        
+
         while not self.loop(ksp, r, z):
             A.mult(p, Ap)
             alpha = delta / p.dot(Ap)
+            # print(z.norm())
+            ptAp = p.dot(Ap)
+            if mpi.COMM_WORLD.rank == 0:
+                print(f'{delta=}')
+                print(f'{ptAp=}')
             if self.Ritz:
                 self.alpha_save.append(alpha)
             x.axpy(+alpha, p)
             r.axpy(-alpha, Ap)
 
             P.apply(r, z)
-            natural_norm = sqrt(r.dot(z))
-            self.natural_norm.append(natural_norm)
+            # natural_norm = sqrt(r.dot(z))
+            # self.natural_norm.append(natural_norm)
 
             delta_old = delta
             delta = r.dot(z)
@@ -406,7 +415,7 @@ class KSP_PCG(MyKSP):
             self.alpha_save = np.array(self.alpha_save)
             self.beta_save = np.array(self.beta_save)
             self.beta_save = self.beta_save[:-1]
-            self.diag = 1./self.alpha_save            
+            self.diag = 1./self.alpha_save
             self.diag[1:] += self.beta_save /self.alpha_save[:-1]
             self.subdiag = - np.sqrt(self.beta_save)/self.alpha_save[:-1]
             self.T = np.diag(self.diag)
@@ -414,7 +423,7 @@ class KSP_PCG(MyKSP):
             self.T += np.diag(self.subdiag,-1)
             [D,V] = np.linalg.eigh(self.T)
             if mpi.COMM_WORLD.rank == 0:
-                   print("\nD : ", D) 
-#            print("\nalpha_save : ", self.alpha_save) 
+                   print("\nD : ", D)
+#            print("\nalpha_save : ", self.alpha_save)
 #            print("Shape : ", self.alpha_save.shape)
 

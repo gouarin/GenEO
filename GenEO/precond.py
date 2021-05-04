@@ -218,11 +218,11 @@ class PCNew:
         self.GenEO = OptDB.getBool('PCNew_GenEO', True)
         self.addCS = OptDB.getBool('PCNew_addCoarseSolve', False)
         self.projCS = OptDB.getBool('PCNew_CoarseProjection', True)
-        self.nev = OptDB.getInt('PCNew_Bs_nev', 20) #number of vectors asked to SLEPc for cmputing negative part of Bs 
+        self.nev = OptDB.getInt('PCNew_Bs_nev', 20) #number of vectors asked to SLEPc for cmputing negative part of Bs
 
         # Compute Bs (the symmetric matrix in the algebraic splitting of A)
         # TODO: implement without A in IS format
-        ANeus = A_IS.getISLocalMat() #only the IS is used for the algorithm, 
+        ANeus = A_IS.getISLocalMat() #only the IS is used for the algorithm,
         Mu = A_IS.copy()
         Mus = Mu.getISLocalMat() #the IS format is used to compute Mu (multiplicity of each pair of dofs)
 
@@ -262,7 +262,7 @@ class PCNew:
 
         #mumps solver for Bs
         Bs_ksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
-        Bs_ksp.setOptionsPrefix("Bs_ksp_") 
+        Bs_ksp.setOptionsPrefix("Bs_ksp_")
         Bs_ksp.setOperators(Bs)
         Bs_ksp.setType('preonly')
         Bs_pc = Bs_ksp.getPC()
@@ -289,14 +289,14 @@ class PCNew:
         invmus = mus.duplicate()
         invmus = 1/mus
         #if mpi.COMM_WORLD.rank == 0:
-        #    invmus.view() 
+        #    invmus.view()
         print(f'multmax: {mult_max}')
 
 
         DVnegs = []
         Vnegs = []
         invmusVnegs = []
-     
+
         #BEGIN diagonalize Bs
         #Eigenvalue Problem for smallest eigenvalues
         eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
@@ -307,16 +307,16 @@ class PCNew:
         print(f'dimension of Bs : {Bs.getSize()}')
 
 
-        #OPTION 1: works but dense algebra 
-        eps.setType(SLEPc.EPS.Type.LAPACK) 
+        #OPTION 1: works but dense algebra
+        eps.setType(SLEPc.EPS.Type.LAPACK)
         eps.setWhichEigenpairs(SLEPc.EPS.Which.SMALLEST_REAL) #with lapack this just tells slepc how to order the eigenpairs
         ##END OPTION 1
 
-        ##OPTION 2: default solver (Krylov Schur) but error with getInertia - is there a MUMPS mattype - Need to use MatCholeskyFactor 
+        ##OPTION 2: default solver (Krylov Schur) but error with getInertia - is there a MUMPS mattype - Need to use MatCholeskyFactor
                #if Which eigenpairs is set to SMALLEST_REAL, some are computed but not all
 
-        ##Bs.setOption(PETSc.Mat.Option.SYMMETRIC, True) 
-        ##Bs.convert('sbaij') 
+        ##Bs.setOption(PETSc.Mat.Option.SYMMETRIC, True)
+        ##Bs.convert('sbaij')
         ##IScholBs = is_A.duplicate()
         ##Bs.factorCholesky(IScholBs) #not implemented
         #tempksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -359,8 +359,8 @@ class PCNew:
                 invmusVnegs.append(invmus * Vnegs[-1])
             else :
                 Dposs.append(tempscalar)
-        PETSc.Sys.Print('for Bs in subdomain {}: ncv= {} with {} negative eigs (nev = {})'.format(mpi.COMM_WORLD.rank, eps.getConverged(), len(Vnegs), self.nev), comm=PETSc.COMM_SELF) 
-        #PETSc.Sys.Print('for Bs in subdomain {}, eigenvalues: {} {}'.format(mpi.COMM_WORLD.rank, Dnegs, Dposs), comm=PETSc.COMM_SELF) 
+        PETSc.Sys.Print('for Bs in subdomain {}: ncv= {} with {} negative eigs (nev = {})'.format(mpi.COMM_WORLD.rank, eps.getConverged(), len(Vnegs), self.nev), comm=PETSc.COMM_SELF)
+        #PETSc.Sys.Print('for Bs in subdomain {}, eigenvalues: {} {}'.format(mpi.COMM_WORLD.rank, Dnegs, Dposs), comm=PETSc.COMM_SELF)
         nnegs = len(Dnegs)
         print(f'length of Dnegs {nnegs}')
         print(f'values of Dnegs {np.array(Dnegs)}')
@@ -373,24 +373,24 @@ class PCNew:
 #        print(f' diag of Dnegs {np.diag(Dnegs)}')
 #        print(f'shape of Dnegs {Dnegs.shape}')
 #        print(f'shape of Vnegs {Vnegs.shape}')
-        #END diagonalize Bs 
+        #END diagonalize Bs
 
 #        self.Vnegs = Vnegs
 #        self.DVnegs = DVnegs
 #        self.scatterl
 
 #Local Apos and Aneg
-        Aneg = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_SELF)
+        Aneg = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
         Aneg.setPythonContext(Aneg_ctx(Vnegs, DVnegs, scatter_l2g, works, work))
         Aneg.setUp()
 
-        Apos = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_SELF)
+        Apos = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
         Apos.setPythonContext(Apos_ctx(A_mpiaij, Aneg ))
         Apos.setUp()
         #A pos = A_mpiaij + Aneg so it could be a composite matrix rather than Python type
 
         Anegs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
-        Anegs.setPythonContext(Anegs_ctx(Vnegs, DVnegs)) 
+        Anegs.setPythonContext(Anegs_ctx(Vnegs, DVnegs))
         Anegs.setUp()
 
         Aposs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
@@ -398,7 +398,7 @@ class PCNew:
         Aposs.setUp()
 
         projVnegs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
-        projVnegs.setPythonContext(Anegs_ctx(Vnegs, DVnegs)) 
+        projVnegs.setPythonContext(Anegs_ctx(Vnegs, DVnegs))
         projVnegs.setUp()
 
         invAposs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
@@ -435,7 +435,7 @@ class PCNew:
 
 
         ## the two following lines do not work because of duplicate and diagonalScale not being implemented for Python type matrices
-        #Ms = Aposs 
+        #Ms = Aposs
         #Ms.diagonalScale(mus, mus)
 
         Ms = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
@@ -445,7 +445,7 @@ class PCNew:
 
         #Ms = Bs.copy()
         #Ms.diagonalScale(mus, mus)
-    
+
         # the default local solver is the scaled non assembled local matrix (as in BNN)
         if self.switchtoASM:
             Atildes = As
@@ -459,8 +459,7 @@ class PCNew:
             pc_Atildes.setType('cholesky')
             pc_Atildes.setFactorSolverType('mumps')
             ksp_Atildes.setFromOptions()
-            self.minV0 = minimal_V0(self.ksp_Atildes)
-            minV0s =  self.minV0.V0s
+            minV0s = minimal_V0(ksp_Atildes).V0s
         else: #(default)
             Atildes = Ms
             ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -476,7 +475,7 @@ class PCNew:
             #ksp_Atildes.solve(works,works_2)
 
         self.A = A_mpiaij
-        self.Apos = Apos 
+        self.Apos = Apos
         self.Ms = Ms
         self.As = As
         self.ksp_Atildes = ksp_Atildes
@@ -496,6 +495,8 @@ class PCNew:
 
 
         self.proj = coarse_operators(self.V0s,self.Apos,self.scatter_l2g,self.works_1,self.work)
+
+
 
         #self.proj = projection(self)
 
@@ -517,6 +518,7 @@ class PCNew:
 ########################
         xd = x.copy()
         if self.projCS == True:
+            print('coucou')
             self.proj.project_transpose(xd)
 
         self.scatter_l2g(xd, self.works_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
@@ -528,6 +530,7 @@ class PCNew:
             self.proj.project(y)
 
         if self.addCS == True:
+            print('coucou2')
             xd = x.copy()
             ytild = self.proj.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
             y += ytild
@@ -568,7 +571,7 @@ class PCNew:
         """
         self.mult(x,y)
 
-class Aneg_ctx(object): 
+class Aneg_ctx(object):
     def __init__(self, Vnegs, DVnegs, scatter_l2g, works, work):
         self.scatter_l2g = scatter_l2g
         self.work = works
@@ -582,7 +585,7 @@ class Aneg_ctx(object):
         y.set(0)
         self.scatter_l2g(x, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         for i,vec in enumerate(self.DVnegs):
-            self.gamma[i] = self.works.dot(vec)          
+            self.gamma[i] = self.works.dot(vec)
         self.works.set(0)
         for i,vec in enumerate(self.Vnegs):
             #if mpi.COMM_WORLD.rank == 0:
@@ -590,8 +593,8 @@ class Aneg_ctx(object):
             self.works.axpy(self.gamma[i], vec)
         self.scatter_l2g(self.works, y, PETSc.InsertMode.ADD_VALUES)
 
-class Apos_ctx(object): 
-    def __init__(self,A_mpiaij, Aneg):  
+class Apos_ctx(object):
+    def __init__(self,A_mpiaij, Aneg):
         self.A_mpiaij = A_mpiaij
         self.Aneg = Aneg
     def mult(self, mat, x, y):
@@ -600,7 +603,7 @@ class Apos_ctx(object):
         self.A_mpiaij.mult(x,y)
         y += xtemp
 
-class Anegs_ctx(object): 
+class Anegs_ctx(object):
     def __init__(self, Vnegs, DVnegs):
         self.Vnegs = Vnegs
         self.DVnegs = DVnegs
@@ -610,15 +613,15 @@ class Anegs_ctx(object):
     def mult(self, mat, x, y):
         y.set(0)
         for i,vec in enumerate(self.DVnegs):
-            self.gamma[i] = x.dot(vec)          
+            self.gamma[i] = x.dot(vec)
         for i,vec in enumerate(self.Vnegs):
             #if mpi.COMM_WORLD.rank == 0:
             #    print(f'self.gamma[i]: {self.gamma[i]}')
             y.axpy(self.gamma[i], vec)
 
 
-class Aposs_ctx(object): 
-    def __init__(self,Bs, Anegs):  
+class Aposs_ctx(object):
+    def __init__(self,Bs, Anegs):
         self.Bs = Bs
         self.Anegs = Anegs
     def mult(self, mat, x, y):
@@ -627,49 +630,51 @@ class Aposs_ctx(object):
         self.Bs.mult(x,y)
         y += xtemp
 
-class scaledmats_ctx(object): 
-    def __init__(self, mats, musl, musr): 
+class scaledmats_ctx(object):
+    def __init__(self, mats, musl, musr):
         self.mats = mats
         self.musl = musl
         self.musr = musr
     def mult(self, mat, x, y):
         xtemp = x*self.musr
         self.mats.mult(xtemp,y)
-        y = y*self.musl 
+        y = y*self.musl
 
-class invAposs_ctx(object): 
-    def __init__(self,Bs_ksp,projVnegs): 
+class invAposs_ctx(object):
+    def __init__(self,Bs_ksp,projVnegs):
         self.Bs_ksp = Bs_ksp
         self.projVnegs = projVnegs
+
     def apply(self, mat, x, y):
         xtemp1 = y.duplicate()
         xtemp2 = y.duplicate()
-        self.projVnegs.mult(x,xtemp1) 
+        self.projVnegs.mult(x,xtemp1)
         self.Bs_ksp.solve(xtemp1,xtemp2)
-        self.projVnegs.mult(xtemp2,y) 
+        self.projVnegs.mult(xtemp2,y)
+
     def mult(self, mat, x, y):
         #xtemp1 = y.duplicate()
         #xtemp2 = y.duplicate()
-        #self.projVnegs.mult(x,xtemp1) 
+        #self.projVnegs.mult(x,xtemp1)
         #self.Bs_ksp.solve(xtemp1,xtemp2)
-        #self.projVnegs.mult(xtemp2,y) 
+        #self.projVnegs.mult(xtemp2,y)
         self.apply(mat, x, y)
-      
-class invweightedAposs_ctx(object): 
-    def __init__(self,invAposs,musl,musr): 
+
+class invweightedAposs_ctx(object):
+    def __init__(self,invAposs,musl,musr):
         self.invAposs = invAposs
         self.musl = musl
-        self.musr = musr   
+        self.musr = musr
     def apply(self, mat, x, y):
         xtemp = x*self.musr
         self.invAposs.mult(xtemp,y)
-        y = y*self.musl 
+        y = y*self.musl
     def mult(self, mat, x, y):
         #xtemp1 = y.duplicate()
         #xtemp2 = y.duplicate()
-        #self.projVnegs.mult(x,xtemp1) 
+        #self.projVnegs.mult(x,xtemp1)
         #self.Bs_ksp.solve(xtemp1,xtemp2)
-        #self.projVnegs.mult(xtemp2,y) 
+        #self.projVnegs.mult(xtemp2,y)
         self.apply(mat, x, y)
 
 
