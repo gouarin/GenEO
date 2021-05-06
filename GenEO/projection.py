@@ -72,7 +72,7 @@ class minimal_V0(object):
         self.nrb = nrb
 
 class GenEO_V0(object):
-    def __init__(self,ksp_Atildes,Ms,As,mult_max,V0s=[]):
+    def __init__(self,ksp_Atildes,Ms,As,mult_max,V0s=[],ksp_Ms=[]):
         """
         Initialize the coarse space and corresponding projection preconditioner and other coarse operators.
         The default coarse space is the kernel of the local operators if these have been factorized
@@ -125,13 +125,18 @@ class GenEO_V0(object):
 
         self.comm = mpi.COMM_SELF
 
-        self.Ms = Ms
         self.As = As
+        self.Ms = Ms
         self.mult_max = mult_max
 
         self.ksp_Atildes = ksp_Atildes
-        _,Atildes = self.ksp_Atildes.getOperators()
-        self.Atildes = Atildes
+        _,self.Atildes = self.ksp_Atildes.getOperators()
+
+        if ksp_Ms == []:
+            self.ksp_Ms = []
+        else:
+            self.ksp_Ms = ksp_Ms
+            _,self.Ms = self.ksp_Ms.getOperators()
 
         works, _ = self.Ms.getVecs()
         self.works = works
@@ -171,7 +176,8 @@ class GenEO_V0(object):
         """
         if tauGenEO_eigmax > 0:
             ##### trick because of what I think is a bug in the interface with SLEPc
-            self.copyksp_Atildes = copy.copy(self.ksp_Atildes)
+            print('WARNING: the copy does not work')
+            self.copyksp_Atildes = self.ksp_Atildes
             # self.copyksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
             # self.copyksp_Atildes.setOptionsPrefix("copyksp_Atildes_")
             # self.copyksp_Atildes.setOperators(self.Atildes)
@@ -229,29 +235,32 @@ class GenEO_V0(object):
         """
         if tauGenEO_eigmin > 0:
             #to compute the smallest eigenvalues of the preconditioned matrix, Ms must be factorized
-            tempksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
-            tempksp.setOperators(self.Ms)
-            tempksp.setType('preonly')
-            temppc = tempksp.getPC()
-            temppc.setType('cholesky')
-            temppc.setFactorSolverType('mumps')
-            temppc.setFactorSetUpSolverType()
-            tempF = temppc.getFactorMatrix()
-            tempF.setMumpsIcntl(7, 2)
-            tempF.setMumpsIcntl(24, 1)
-            tempF.setMumpsCntl(3, self.mumpsCntl3)
-            temppc.setUp()
-            tempnrb = tempF.getMumpsInfog(28)
+            if self.ksp_Ms == []: 
+                tempksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+                tempksp.setOperators(self.Ms)
+                tempksp.setType('preonly')
+                temppc = tempksp.getPC()
+                temppc.setType('cholesky')
+                temppc.setFactorSolverType('mumps')
+                temppc.setFactorSetUpSolverType()
+                tempF = temppc.getFactorMatrix()
+                tempF.setMumpsIcntl(7, 2)
+                tempF.setMumpsIcntl(24, 1)
+                tempF.setMumpsCntl(3, self.mumpsCntl3)
+                temppc.setUp()
+                tempnrb = tempF.getMumpsInfog(28)
 
-            for i in range(tempnrb):
-                tempF.setMumpsIcntl(25, i+1)
-                self.works.set(0.)
-                tempksp.solve(self.works, self.works)
-                V0s.append(self.works.copy())
+                for i in range(tempnrb):
+                    tempF.setMumpsIcntl(25, i+1)
+                    self.works.set(0.)
+                    tempksp.solve(self.works, self.works)
+                    V0s.append(self.works.copy())
 
-            tempF.setMumpsIcntl(25, 0)
-            if self.verbose:
-                PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of the scaled local operator (in GenEO for eigmin)'.format(mpi.COMM_WORLD.rank, tempnrb), comm=self.comm)
+                tempF.setMumpsIcntl(25, 0)
+                if self.verbose:
+                    PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of the scaled local operator (in GenEO for eigmin)'.format(mpi.COMM_WORLD.rank, tempnrb), comm=self.comm)
+            else:
+                tempksp = self.ksp_Ms
 
             #Eigenvalue Problem for smallest eigenvalues
             eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)

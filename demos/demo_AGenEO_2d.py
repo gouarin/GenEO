@@ -134,13 +134,19 @@ ksp.setType("cg")
 #ksp.setPythonContext(pyKSP)
 
 ksp.setInitialGuessNonzero(True)
-#ksp.setInitialGuessNonzero(False)
 
 ksp.setFromOptions()
 #### END SETUP KSP
 
 ###### SOLVE:
 ksp.solve(b, x)
+
+if ksp.getInitialGuessNonzero() == False:
+    x+=xtild
+
+Aposx = x.duplicate()
+pcbnn.Apos.mult(x,Aposx)
+print(f'norm of Apos x - b = {(Aposx - b).norm()}, norm of b = {b.norm()}')
 
 #print('I arrive here')
 

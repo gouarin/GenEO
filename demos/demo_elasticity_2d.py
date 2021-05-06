@@ -100,10 +100,13 @@ x *= xnorm
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
-ksp.setType(ksp.Type.PYTHON)
-pyKSP = KSP_AMPCG(pcbnn)
-pyKSP.callback = callback(da)
-ksp.setPythonContext(pyKSP)
+
+ksp.setType("cg")
+
+#ksp.setType(ksp.Type.PYTHON)
+#pyKSP = KSP_AMPCG(pcbnn)
+#pyKSP.callback = callback(da)
+#ksp.setPythonContext(pyKSP)
 ksp.setFromOptions()
 ksp.setInitialGuessNonzero(True)
 

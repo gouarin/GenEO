@@ -114,10 +114,20 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         pc_Atildes.setFactorSolverType('mumps')
         ksp_Atildes.setFromOptions()
 
+        ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+        ksp_Atildes_forSLEPc.setOptionsPrefix("ksp_Atildes_")
+        ksp_Atildes_forSLEPc.setOperators(Atildes)
+        ksp_Atildes_forSLEPc.setType('preonly')
+        pc_Atildes_forSLEPc = ksp_Atildes_forSLEPc.getPC()
+        pc_Atildes_forSLEPc.setType('cholesky')
+        pc_Atildes_forSLEPc.setFactorSolverType('mumps')
+        ksp_Atildes_forSLEPc.setFromOptions()
+
         self.A = A_mpiaij
         self.Ms = Ms
         self.As = As
         self.ksp_Atildes = ksp_Atildes
+        self.ksp_Atildes_forSLEPc = ksp_Atildes_forSLEPc
         self.work = vglobal.copy()
         self.works_1 = vlocal.copy()
         self.works_2 = self.works_1.copy()
@@ -126,7 +136,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
 
         self.minV0 = minimal_V0(self.ksp_Atildes)
         if self.GenEO == True:
-          GenEOV0 = GenEO_V0(self.ksp_Atildes,self.Ms,self.As,self.mult_max,self.minV0.V0s)
+          GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,self.minV0.V0s)
           self.V0s = GenEOV0.V0s
         else:
           self.V0s = self.minV0.V0s
@@ -191,7 +201,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
             self.scatter_l2g(self.works_1, y[i], PETSc.InsertMode.ADD_VALUES)
             self.proj.project(y[i])
 
-    def apply(self, pc, x, y):
+    def apply(self,pc, x, y):
         """
         Applies the domain decomposition preconditioner followed by the projection preconditioner to a vector.
         This is just a call to PCBNN.mult with the function name and arguments that allow PCBNN to be passed
@@ -406,6 +416,11 @@ class PCNew:
         projVposs.setPythonContext(projVposs_ctx(projVnegs))
         projVposs.setUp()
 
+        #TODO Implement RsAposRsts, this is the restriction of Apos to the dofs in this subdomain. So it applies to local vectors but has non local operations
+        #RsAposRsts = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF) #or COMM_WORLD ?
+        #RsAposRsts.setPythonContext(RsAposRsts_ctx(s,Apos,scatter_l2g))
+        #RsAposRsts.setUp()
+
         invAposs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
         invAposs.setPythonContext(invAposs_ctx(Bs_ksp, projVposs ))
         invAposs.setUp()
@@ -432,8 +447,18 @@ class PCNew:
         pc_Ms.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
         ksp_Ms.setFromOptions()
 
+        ksp_Ms_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+        ksp_Ms_forSLEPc.setOptionsPrefix("ksp_Ms_")
+        ksp_Ms_forSLEPc.setOperators(Ms)
+        ksp_Ms_forSLEPc.setType('preonly')
+        pc_Ms_forSLEPc = ksp_Ms_forSLEPc.getPC()
+        pc_Ms_forSLEPc.setType('python')
+        pc_Ms_forSLEPc.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
+        ksp_Ms_forSLEPc.setFromOptions()
+
         # the default local solver is the scaled non assembled local matrix (as in BNN)
         if self.switchtoASM:
+            print('The GenEO coarse space for this Atildes with global opeator Apos is not implemented yet, the component for eigmax is missing')
             Atildes = As
             if mpi.COMM_WORLD.rank == 0:
                 print('The user has chosen to switch to Additive Schwarz instead of BNN.')
@@ -446,19 +471,35 @@ class PCNew:
             pc_Atildes.setFactorSolverType('mumps')
             ksp_Atildes.setFromOptions()
             minV0s = minimal_V0(ksp_Atildes).V0s
+
+            ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+            ksp_Atildes_forSLEPc.setOptionsPrefix("ksp_Atildes_")
+            ksp_Atildes_forSLEPc.setOperators(Atildes)
+            ksp_Atildes_forSLEPc.setType('preonly')
+            pc_Atildes_forSLEPc = ksp_Atildes_forSLEPc.getPC()
+            pc_Atildes_forSLEPc.setType('cholesky')
+            pc_Atildes_forSLEPc.setFactorSolverType('mumps')
+            ksp_Atildes_forSLEPc.setFromOptions()
         else: #(default)
             Atildes = Ms
-            ksp_Atildes = copy.copy(ksp_Ms)
-            #ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
-            #ksp_Atildes.setOptionsPrefix("ksp_Atildes_")
-            #ksp_Atildes.setOperators(Atildes)
-            #ksp_Atildes.setType('preonly')
-            #pc_Atildes = ksp_Atildes.getPC()
-            #pc_Atildes.setType('python')
-            #pc_Atildes.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
+            ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+            ksp_Atildes.setOptionsPrefix("ksp_Atildes_")
+            ksp_Atildes.setOperators(Atildes)
+            ksp_Atildes.setType('preonly')
+            pc_Atildes = ksp_Atildes.getPC()
+            pc_Atildes.setType('python')
+            pc_Atildes.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
             ksp_Atildes.setFromOptions()
             minV0s = invmusVnegs
 
+            ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+            ksp_Atildes_forSLEPc.setOptionsPrefix("ksp_Atildes_")
+            ksp_Atildes_forSLEPc.setOperators(Atildes)
+            ksp_Atildes_forSLEPc.setType('preonly')
+            pc_Atildes_forSLEPc = ksp_Atildes_forSLEPc.getPC()
+            pc_Atildes_forSLEPc.setType('python')
+            pc_Atildes_forSLEPc.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
+            ksp_Atildes_forSLEPc.setFromOptions()
 
         self.A = A_mpiaij
         self.Apos = Apos
@@ -466,6 +507,8 @@ class PCNew:
         self.As = As
         self.ksp_Atildes = ksp_Atildes
         self.ksp_Ms = ksp_Ms
+        self.ksp_Atildes_forSLEPc = ksp_Atildes_forSLEPc
+        self.ksp_Ms_forSLEPc = ksp_Ms_forSLEPc
         self.work = work
         self.works_1 = works
         self.works_2 = works_2
@@ -474,7 +517,7 @@ class PCNew:
         self.ksp_Atildes = ksp_Atildes
 
         if self.GenEO == True:
-          GenEOV0 = GenEO_V0(self.ksp_Atildes,self.Ms,self.As,self.mult_max,minV0s)
+          GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,minV0s,self.ksp_Ms_forSLEPc)
           self.V0s = GenEOV0.V0s
         else:
           self.V0s = minV0s
@@ -483,14 +526,14 @@ class PCNew:
 
 ##Debug DEBUG
         works_3 = works.copy()
-#projVnegs is a projection
+##projVnegs is a projection
 #        #works.setRandom()
 #        works.set(1.)
 #        projVnegs.mult(works,works_2)
 #        projVnegs.mult(works_2,works_3)
 #        print(f'check that projVnegs is a projection {works_2.norm()} = {works_3.norm()} < {works.norm()}')
-#projVposs is a projection
-#Pythagoras ok
+##projVposs is a projection
+##Pythagoras ok
 #        works.setRandom()
 #        #works.set(1.)
 #        projVnegs.mult(works,works_2)
@@ -507,7 +550,6 @@ class PCNew:
 #        Aposs.mult(works,works_4)
 #        print(f'check Aposs = projVposs Bs projVposs = Bs projVposs: {works_2.norm()} = {works_3.norm()} = {works_4.norm()}')
 #        print(f'norms of diffs (should be zero): {(works_2 - works_3).norm()}, {(works_2 - works_4).norm()}, {(works_3 - works_4).norm()}')
-#        exit()
 ###check that Aposs > 0 and Anegs >0 but Bs is indefinite + "Pythagoras"  
 #        works_4 = works.copy()
 #        works.set(1.) #(with vector full of ones I get a negative Bs semi-norm) 
@@ -534,7 +576,8 @@ class PCNew:
 #        works_4 = works.copy()
 #        works.setRandom()
 #        Atildes.mult(works,works_3)
-#        ksp_Atildes.solve(works_3,works_4)  
+#        self.ksp_Atildes.solve(works_3,works_4)  
+#        #HERE
 #        Atildes.mult(works_4,works_2)
 #        works_5 = works_2 - works_3 
 #        print(f'norm x = {works.norm()}; Atilde*x = {works_3.norm()} = norm Atilde*(Atildes\Atildes)*x = {works_2.norm()}; normdiff = {works_5.norm()}')
@@ -562,7 +605,7 @@ class PCNew:
 #        self.proj.A.mult(test,test2)
 #        test3 = work.duplicate()
 #        self.proj.A.mult(work,test3)
-#        print(f'|Pi x|_A^2 = {test.dot(test2)} < {work.dot(test3)} = |x|_A^2')
+#        print(f'|Pi x|_A^2 - |x|_A^2 = {test.dot(test2)} - {work.dot(test3)} = {test.dot(test2) - work.dot(test3)} < 0 ')
 #        #test2 = A Pi x ( = Pit A Pi x)
 #        test3 = test2.copy()
 #        self.proj.project_transpose(test3)
@@ -583,9 +626,18 @@ class PCNew:
 #        self.proj.A.mult(test,test3)
 #
 #        print(f'norm(A coarse_init(b)) = {test3.norm()} = {test2.norm()} = norm((I-Pit b)); norm diff = {(test2 - test3).norm()}')   
-
+#
 ## END Debug DEBUG
-
+#        self.work.setRandom()
+#        test = work.duplicate()
+#        self.apply([],self.work,test)
+#        print('self.apply applied')
+#        test.view()
+#TODO: + define a new class for preconditioner of Apos to keep the apply in this class for the preconditioner for A
+#      + compute R0t = Apos \ Rst Vnegs for every s and every vector in Vnegs
+#      + define coarse operators for A with R0t
+#      + define global preconditioner for A
+ 
     def mult(self, x, y):
         """
         Applies the domain decomposition preconditioner followed by the projection preconditioner to a vector.
