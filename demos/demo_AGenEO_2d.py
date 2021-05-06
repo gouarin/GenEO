@@ -97,6 +97,9 @@ pcbnn = PCNew(A)
 Apos = pcbnn.Apos
 ############compute x FOR INITIALIZATION OF PCG
 # Random initial guess
+print('Random rhs')
+b.setRandom()
+
 x.setRandom()
 
 xnorm = b.dot(x)/x.dot(Apos*x)
@@ -108,6 +111,9 @@ x *= xnorm
 #the initial guess is passed to the PCG below with the option ksp.setInitialGuessNonzero(True)
 pcbnn.proj.project(x)
 xtild = pcbnn.proj.coarse_init(b)
+tmp = xtild.norm()
+if mpi.COMM_WORLD.rank == 0:
+    print(f'norm xtild (coarse component of solution) {tmp}')
 x += xtild
 ############END of: compute x FOR INITIALIZATION OF PCG
 
@@ -121,13 +127,14 @@ pc.setType('python')
 pc.setPythonContext(pcbnn)
 pc.setFromOptions()
 
-# ksp.setType("cg")
-ksp.setType(ksp.Type.PYTHON)
-pyKSP = KSP_PCG()
+ksp.setType("cg")
 # #pyKSP.callback = callback(da)
-ksp.setPythonContext(pyKSP)
+#ksp.setType(ksp.Type.PYTHON)
+#pyKSP = KSP_PCG()
+#ksp.setPythonContext(pyKSP)
 
 ksp.setInitialGuessNonzero(True)
+#ksp.setInitialGuessNonzero(False)
 
 ksp.setFromOptions()
 #### END SETUP KSP

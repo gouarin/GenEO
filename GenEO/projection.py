@@ -8,6 +8,7 @@ import mpi4py.MPI as mpi
 import numpy as np
 from .bc import bcApplyWest_vec
 from slepc4py import SLEPc
+import copy
 
 #def test(y,x):
 #    print(f'y1 {y}')
@@ -170,7 +171,6 @@ class GenEO_V0(object):
         """
         if tauGenEO_eigmax > 0:
             ##### trick because of what I think is a bug in the interface with SLEPc
-            import copy
             self.copyksp_Atildes = copy.copy(self.ksp_Atildes)
             # self.copyksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
             # self.copyksp_Atildes.setOptionsPrefix("copyksp_Atildes_")

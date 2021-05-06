@@ -12,6 +12,7 @@ from slepc4py import SLEPc
 import mpi4py.MPI as mpi
 import numpy as np
 import scipy as sp
+import copy
 
 class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
     def __init__(self, A_IS):
@@ -290,7 +291,7 @@ class PCNew:
         invmus = 1/mus
         #if mpi.COMM_WORLD.rank == 0:
         #    invmus.view()
-        print(f'multmax: {mult_max}')
+        #print(f'multmax: {mult_max}')
 
 
         DVnegs = []
@@ -304,7 +305,7 @@ class PCNew:
         eps.setProblemType(SLEPc.EPS.ProblemType.HEP)
         eps.setOperators(Bs)
 
-        print(f'dimension of Bs : {Bs.getSize()}')
+        #print(f'dimension of Bs : {Bs.getSize()}')
 
 
         #OPTION 1: works but dense algebra
@@ -362,8 +363,8 @@ class PCNew:
         PETSc.Sys.Print('for Bs in subdomain {}: ncv= {} with {} negative eigs (nev = {})'.format(mpi.COMM_WORLD.rank, eps.getConverged(), len(Vnegs), self.nev), comm=PETSc.COMM_SELF)
         #PETSc.Sys.Print('for Bs in subdomain {}, eigenvalues: {} {}'.format(mpi.COMM_WORLD.rank, Dnegs, Dposs), comm=PETSc.COMM_SELF)
         nnegs = len(Dnegs)
-        print(f'length of Dnegs {nnegs}')
-        print(f'values of Dnegs {np.array(Dnegs)}')
+        #print(f'length of Dnegs {nnegs}')
+        #print(f'values of Dnegs {np.array(Dnegs)}')
 
 
 #        Dnegs = np.diag(Dnegs) #TODO Loic: make it sparse
@@ -398,53 +399,38 @@ class PCNew:
         Aposs.setUp()
 
         projVnegs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
-        projVnegs.setPythonContext(Anegs_ctx(Vnegs, DVnegs))
+        projVnegs.setPythonContext(projVnegs_ctx(Vnegs))
         projVnegs.setUp()
 
+        projVposs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
+        projVposs.setPythonContext(projVposs_ctx(projVnegs))
+        projVposs.setUp()
+
         invAposs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
-        invAposs.setPythonContext(invAposs_ctx(Bs_ksp, projVnegs ))
+        invAposs.setPythonContext(invAposs_ctx(Bs_ksp, projVposs ))
+        invAposs.setUp()
 
-        Aposs_ksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
-        Aposs_ksp.setOperators(Aposs)
-        Aposs_ksp.setType('preonly')
-        Aposs_pc = Aposs_ksp.getPC()
-        Aposs_pc.setType('python')
-        Aposs_pc.setPythonContext(invAposs_ctx(Bs_ksp,projVnegs))
-        Aposs_ksp.setUp()
+        ksp_Aposs = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+        ksp_Aposs.setOperators(Aposs)
+        ksp_Aposs.setType('preonly')
+        pc_Aposs = ksp_Aposs.getPC()
+        pc_Aposs.setType('python')
+        pc_Aposs.setPythonContext(invAposs_ctx(Bs_ksp,projVposs))
+        ksp_Aposs.setUp()
         work.set(1.)
-        test = work.duplicate()
-        test2 = work.duplicate()
-        test1 = work.duplicate()
-#       # Aneg.mult(work,test)
-        #Apos.mult(work,test)
-        #test1 = Apos*work
-        #Apos.mult(work,test2)
-        #test3 = test1-test2
-        #test3.view()
-#
-#        works.set(1.)
-#        Anegs.mult(works,works_2)
-#        #test.view()
-#        Aposs.mult(works,works_2)
-#        #test.view()
-        works.set(1.)
-        projVnegs.mult(works,works_2)
-#HERE the next line makes everything break down
-        #invAposs.mult(works,works_2)
-        Aposs_ksp.solve(works,works_2)
-
-
-        ## the two following lines do not work because of duplicate and diagonalScale not being implemented for Python type matrices
-        #Ms = Aposs
-        #Ms.diagonalScale(mus, mus)
 
         Ms = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
         Ms.setPythonContext(scaledmats_ctx(Aposs, mus, mus))
         Ms.setUp()
-        #Ms = Aposs
 
-        #Ms = Bs.copy()
-        #Ms.diagonalScale(mus, mus)
+        ksp_Ms = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+        ksp_Ms.setOptionsPrefix("ksp_Ms_")
+        ksp_Ms.setOperators(Ms)
+        ksp_Ms.setType('preonly')
+        pc_Ms = ksp_Ms.getPC()
+        pc_Ms.setType('python')
+        pc_Ms.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
+        ksp_Ms.setFromOptions()
 
         # the default local solver is the scaled non assembled local matrix (as in BNN)
         if self.switchtoASM:
@@ -462,23 +448,24 @@ class PCNew:
             minV0s = minimal_V0(ksp_Atildes).V0s
         else: #(default)
             Atildes = Ms
-            ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
-            ksp_Atildes.setOptionsPrefix("ksp_Atildes_")
-            ksp_Atildes.setOperators(Atildes)
-            ksp_Atildes.setType('preonly')
-            pc_Atildes = ksp_Atildes.getPC()
-            pc_Atildes.setType('python')
-            pc_Atildes.setPythonContext(invweightedAposs_ctx(invAposs,invmus,invmus) )
+            ksp_Atildes = copy.copy(ksp_Ms)
+            #ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+            #ksp_Atildes.setOptionsPrefix("ksp_Atildes_")
+            #ksp_Atildes.setOperators(Atildes)
+            #ksp_Atildes.setType('preonly')
+            #pc_Atildes = ksp_Atildes.getPC()
+            #pc_Atildes.setType('python')
+            #pc_Atildes.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
             ksp_Atildes.setFromOptions()
             minV0s = invmusVnegs
-            #works.set(1.)
-            #ksp_Atildes.solve(works,works_2)
+
 
         self.A = A_mpiaij
         self.Apos = Apos
         self.Ms = Ms
         self.As = As
         self.ksp_Atildes = ksp_Atildes
+        self.ksp_Ms = ksp_Ms
         self.work = work
         self.works_1 = works
         self.works_2 = works_2
@@ -491,14 +478,113 @@ class PCNew:
           self.V0s = GenEOV0.V0s
         else:
           self.V0s = minV0s
-          PETSc.Sys.Print('Debug Subdomain number {} len(minV0s) {} '.format(mpi.COMM_WORLD.rank, len(self.V0s)), comm=mpi.COMM_SELF)
-
 
         self.proj = coarse_operators(self.V0s,self.Apos,self.scatter_l2g,self.works_1,self.work)
 
+##Debug DEBUG
+        works_3 = works.copy()
+#projVnegs is a projection
+#        #works.setRandom()
+#        works.set(1.)
+#        projVnegs.mult(works,works_2)
+#        projVnegs.mult(works_2,works_3)
+#        print(f'check that projVnegs is a projection {works_2.norm()} = {works_3.norm()} < {works.norm()}')
+#projVposs is a projection
+#Pythagoras ok
+#        works.setRandom()
+#        #works.set(1.)
+#        projVnegs.mult(works,works_2)
+#        projVposs.mult(works,works_3)
+#        print(f'{works_2.norm()**2} +  {works_3.norm()**2}= {works_2.norm()**2 +  works_3.norm()**2}  =  {(works.norm())**2}') 
+#        print(f'0 = {(works - works_2 - works_3).norm()} if the two projections sum to identity')
+##Aposs = projVposs Bs projVposs = Bs projVposs  (it is implemented as Bs + Anegs)
+#        works_4 = works.copy()
+#        works.setRandom()
+#        #works.set(1.)
+#        projVposs.mult(works,works_2)
+#        Bs.mult(works_2,works_3)
+#        projVposs.mult(works_3,works_2)
+#        Aposs.mult(works,works_4)
+#        print(f'check Aposs = projVposs Bs projVposs = Bs projVposs: {works_2.norm()} = {works_3.norm()} = {works_4.norm()}')
+#        print(f'norms of diffs (should be zero): {(works_2 - works_3).norm()}, {(works_2 - works_4).norm()}, {(works_3 - works_4).norm()}')
+#        exit()
+###check that Aposs > 0 and Anegs >0 but Bs is indefinite + "Pythagoras"  
+#        works_4 = works.copy()
+#        works.set(1.) #(with vector full of ones I get a negative Bs semi-norm) 
+#        Bs.mult(works,works_4)
+#        Aposs.mult(works,works_2)
+#        Anegs.mult(works,works_3)
+#        print(f'|.|_Bs {works_4.dot(works)} (can be neg or pos); |.|_Aposs {works_2.dot(works)} > 0;  |.|_Anegs  {works_3.dot(works)} >0')
+#        print(f' |.|_Bs^2 = |.|_Aposs^2 -  |.|_Anegs ^2 = {works_2.dot(works)} - {works_3.dot(works)} = {works_2.dot(works) - works_3.dot(works)} = {works_4.dot(works)} ')##
+###check that ksp_Aposs.solve(Aposs *  x) = projVposs x         
+#        works_4 = works.copy()
+#        works.setRandom()
+#        #works.set(1.)
+#        projVposs.mult(works,works_2)
+#        Aposs(works,works_3)
+#        ksp_Aposs.solve(works_3,works_4)  
+#        works_5 = works_2 - works_4 
+#        print(f'norm x = {works.norm()}; norm projVposs x = {works_2.norm()} = norm Aposs\Aposs*x = {works_4.norm()}; normdiff = {works_5.norm()}')
+####check that mus*invmus = vec of ones
+#        works.set(1.0)
+#        works_2 = invmus*mus
+#        works_3 = works - works_2
+#        print(f'0 = norm(vec of ones - mus*invmus)   = {works_3.norm()}, mus in [{mus.min()}, {mus.max()}], invmus in [{invmus.min()}, {invmus.max()}]')
+###check that Ms*ksp_Ms.solve(Ms*x) = Ms*x  
+#        works_4 = works.copy()
+#        works.setRandom()
+#        Atildes.mult(works,works_3)
+#        ksp_Atildes.solve(works_3,works_4)  
+#        Atildes.mult(works_4,works_2)
+#        works_5 = works_2 - works_3 
+#        print(f'norm x = {works.norm()}; Atilde*x = {works_3.norm()} = norm Atilde*(Atildes\Atildes)*x = {works_2.norm()}; normdiff = {works_5.norm()}')
+###check Apos by implementing it a different way in Apos_debug
+#        Apos_debug = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
+#        Apos_debug.setPythonContext(Apos_debug_ctx(projVposs, Aposs, scatter_l2g, works, work))
+#        Apos_debug.setUp()
+#        work.setRandom()
+#        test = work.duplicate()
+#        test2 = work.duplicate()
+#        Apos.mult(work,test)
+#        Apos_debug.mult(work,test2)
+#        testdiff = test-test2
+#        print(f'norm of |.|_Apos = {np.sqrt(test.dot(work))} = |.|_Apos_debug = {np.sqrt(test2.dot(work))} ; norm of diff = {testdiff.norm()}')
+### 
+###check that the projection in proj is a self.proj.A orth projection
+#        #work.setRandom()
+#        work.set(1.)
+#        test = work.copy()
+#        self.proj.project(test)
+#        test2 = test.copy()
+#        self.proj.project(test2)
+#        testdiff = test-test2
+#        print(f'norm(Pi x - Pi Pix) = {testdiff.norm()} = 0') 
+#        self.proj.A.mult(test,test2)
+#        test3 = work.duplicate()
+#        self.proj.A.mult(work,test3)
+#        print(f'|Pi x|_A^2 = {test.dot(test2)} < {work.dot(test3)} = |x|_A^2')
+#        #test2 = A Pi x ( = Pit A Pi x)
+#        test3 = test2.copy()
+#        self.proj.project_transpose(test3)
+#        test = test3.copy()
+#        self.proj.project_transpose(test)
+#        testdiff = test3 - test2
+#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare with norm(A Pi x) = {test2.norm()} ') 
+#        #work.setRandom()
+#        work.set(1.)
+#        test2 = work.copy()
+#        self.proj.project_transpose(test2)
+#        test2 = -1*test2
+#        test2 += work
+#    
+#        test = work.copy()
+#        test = self.proj.coarse_init(work)
+#        test3 = work.duplicate()
+#        self.proj.A.mult(test,test3)
+#
+#        print(f'norm(A coarse_init(b)) = {test3.norm()} = {test2.norm()} = norm((I-Pit b)); norm diff = {(test2 - test3).norm()}')   
 
-
-        #self.proj = projection(self)
+## END Debug DEBUG
 
     def mult(self, x, y):
         """
@@ -518,7 +604,6 @@ class PCNew:
 ########################
         xd = x.copy()
         if self.projCS == True:
-            print('coucou')
             self.proj.project_transpose(xd)
 
         self.scatter_l2g(xd, self.works_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
@@ -530,7 +615,6 @@ class PCNew:
             self.proj.project(y)
 
         if self.addCS == True:
-            print('coucou2')
             xd = x.copy()
             ytild = self.proj.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
             y += ytild
@@ -593,6 +677,20 @@ class Aneg_ctx(object):
             self.works.axpy(self.gamma[i], vec)
         self.scatter_l2g(self.works, y, PETSc.InsertMode.ADD_VALUES)
 
+class Apos_debug_ctx(object):
+    def __init__(self, projVposs, Aposs, scatter_l2g, works, work):
+        self.scatter_l2g = scatter_l2g
+        self.work = works
+        self.works = works
+        self.projVposs = projVposs
+        self.Aposs = Aposs
+    def mult(self, mat, x, y):
+        y.set(0)
+        works_2 = self.works.duplicate()
+        self.scatter_l2g(x, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.Aposs.mult(self.works,works_2)
+        self.scatter_l2g(works_2, y, PETSc.InsertMode.ADD_VALUES)
+
 class Apos_ctx(object):
     def __init__(self,A_mpiaij, Aneg):
         self.A_mpiaij = A_mpiaij
@@ -636,22 +734,22 @@ class scaledmats_ctx(object):
         self.musl = musl
         self.musr = musr
     def mult(self, mat, x, y):
-        xtemp = x*self.musr
+        xtemp = x.copy()*self.musr
         self.mats.mult(xtemp,y)
-        y = y*self.musl
+        y *= self.musl
+    def apply(self, mat, x, y):
+        self.mult(mat, x, y)
 
 class invAposs_ctx(object):
-    def __init__(self,Bs_ksp,projVnegs):
+    def __init__(self,Bs_ksp,projVposs):
         self.Bs_ksp = Bs_ksp
-        self.projVnegs = projVnegs
-
+        self.projVposs = projVposs
     def apply(self, mat, x, y):
         xtemp1 = y.duplicate()
         xtemp2 = y.duplicate()
-        self.projVnegs.mult(x,xtemp1)
+        self.projVposs.mult(x,xtemp1)
         self.Bs_ksp.solve(xtemp1,xtemp2)
-        self.projVnegs.mult(xtemp2,y)
-
+        self.projVposs.mult(xtemp2,y)
     def mult(self, mat, x, y):
         #xtemp1 = y.duplicate()
         #xtemp2 = y.duplicate()
@@ -660,22 +758,17 @@ class invAposs_ctx(object):
         #self.projVnegs.mult(xtemp2,y)
         self.apply(mat, x, y)
 
-class invweightedAposs_ctx(object):
-    def __init__(self,invAposs,musl,musr):
-        self.invAposs = invAposs
-        self.musl = musl
-        self.musr = musr
-    def apply(self, mat, x, y):
-        xtemp = x*self.musr
-        self.invAposs.mult(xtemp,y)
-        y = y*self.musl
+class projVnegs_ctx(object):
+    def __init__(self, Vnegs):
+        self.Vnegs = Vnegs
     def mult(self, mat, x, y):
-        #xtemp1 = y.duplicate()
-        #xtemp2 = y.duplicate()
-        #self.projVnegs.mult(x,xtemp1)
-        #self.Bs_ksp.solve(xtemp1,xtemp2)
-        #self.projVnegs.mult(xtemp2,y)
-        self.apply(mat, x, y)
+        y.set(0)
+        for i,vec in enumerate(self.Vnegs):
+            y.axpy(x.dot(vec) , vec)
 
-
-
+class projVposs_ctx(object):
+    def __init__(self, projVnegs):
+        self.projVnegs = projVnegs
+    def mult(self, mat, x, y):
+        self.projVnegs(-x,y)
+        y.axpy(1.,x) 
