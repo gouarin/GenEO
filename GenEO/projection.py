@@ -292,11 +292,9 @@ class GenEO_V0(object):
             self.eps_eigmin=eps #the only reason for this line is to make sure self.ksp_Atildes and hence PCBNN.ksp is not destroyed
 
 class coarse_operators(object):
-    def __init__(self,V0s,A,scatter_l2g,works,work):
+    def __init__(self,V0s,A,scatter_l2g,works,work,V0_is_global=False):
         """
-        PCBNN_verbose : Bool
-            Default is False.
-            If True, some information about the preconditioners is printed when the code is executed.
+        V0_is_global is a Boolean that defines whether the coarse space has already been assembled over subdomains. If false, the vectors in V0s are local, will be extended by zero to the whole subdomain to obtain a global coarse space of dimension (sum(len(V0s)). If True then the vectors in V0s are already the local components of some global coarse vectors. The dimension of the global coarse space is len(V0s).
         """
         OptDB = PETSc.Options()
         self.verbose =  OptDB.getBool('PCBNN_verbose', False)
@@ -305,6 +303,7 @@ class coarse_operators(object):
 
         self.scatter_l2g = scatter_l2g
         self.A = A
+        self.V0_is_global = V0_is_global
         self.works = works
         self.work = work
 
@@ -351,13 +350,16 @@ class coarse_operators(object):
         if self.verbose:
             PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors in total'.format(mpi.COMM_WORLD.rank, len(V0s)), comm=self.comm)
 
-        V0 = []
         self.work2 = self.work.duplicate()
-        for i in range(mpi.COMM_WORLD.size):
-            nrbl = len(V0s) if i == mpi.COMM_WORLD.rank else None
-            nrbl = mpi.COMM_WORLD.bcast(nrbl, root=i)
-            for irbm in range(nrbl):
-                V0.append(V0s[irbm] if i == mpi.COMM_WORLD.rank else None)
+        if(self.V0_is_global == False):
+            V0 = []
+            for i in range(mpi.COMM_WORLD.size):
+                nrbl = len(V0s) if i == mpi.COMM_WORLD.rank else None
+                nrbl = mpi.COMM_WORLD.bcast(nrbl, root=i)
+                for irbm in range(nrbl):
+                    V0.append(V0s[irbm] if i == mpi.COMM_WORLD.rank else None)
+        else:
+            V0 = V0s
 
         AV0 = []
         for vec in V0:
@@ -375,15 +377,16 @@ class coarse_operators(object):
             self.A.mult(self.work,self.work2)
             AV0.append(self.work2.copy())
             self.scatter_l2g(AV0[-1], self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+            tmp = np.sqrt(self.work.dot(self.work2))
             if vec:
-                vec.scale(1./np.sqrt(vec.dot(self.works)))
+                vec.scale(1./tmp)
                 self.works = vec.copy()
             else:
                 self.works.set(0)
             self.work.set(0)
             self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
             #self.A.mult(self.work,self.work2)
-            AV0[-1] = self.A * self.work
+            self.A.mult(self.work,AV0[-1])
             #self.A.mult(self.work,AV0[-1])
             # AV0[-1] = self.work2.copy()
             # AV0[-1] = xtmp.copy()

@@ -95,10 +95,64 @@ bcApplyWest(da, A, b)
 pcbnn = PCNew(A)
 
 Apos = pcbnn.Apos
+#############compute x FOR INITIALIZATION OF PCG
+## Random initial guess
+#print('Random rhs')
+#b.setRandom()
+#
+#x.setRandom()
+#
+#xnorm = b.dot(x)/x.dot(Apos*x)
+#x *= xnorm
+#
+##Pre-compute solution in coarse space
+##Required for PPCG (projected preconditioner)
+##Doesn't hurt or help the hybrid and additive preconditioners
+##the initial guess is passed to the PCG below with the option ksp.setInitialGuessNonzero(True)
+#
+#
+#print('solve a problem for Apos preconditioned by H2')
+#pcbnn.proj2.project(x)
+#xtild = pcbnn.proj2.coarse_init(b)
+#tmp = xtild.norm()
+#if mpi.COMM_WORLD.rank == 0:
+#    print(f'norm xtild (coarse component of solution) {tmp}')
+#x += xtild
+#############END of: compute x FOR INITIALIZATION OF PCG
+#
+##############SETUP KSP
+#ksp_Apos = pcbnn.ksp_Apos
+#ksp_Apos.setOptionsPrefix("")
+#pc_Apos = ksp_Apos.pc
+#pc_Apos = pcbnn.pc_Apos
+#pc_Apos.setFromOptions()
+#
+##ksp.setType("cg")
+## #pyKSP.callback = callback(da)
+##ksp.setType(ksp.Type.PYTHON)
+##pyKSP = KSP_PCG()
+##ksp.setPythonContext(pyKSP)
+#
+#ksp_Apos.setInitialGuessNonzero(True)
+#
+#ksp_Apos.setFromOptions()
+##### END SETUP KSP
+#
+####### SOLVE:
+#ksp_Apos.solve(b, x)
+#
+#if ksp_Apos.getInitialGuessNonzero() == False:
+#    x+=xtild
+#
+#Aposx = x.duplicate()
+#pcbnn.Apos.mult(x,Aposx)
+#print(f'norm of Apos x - b = {(Aposx - b).norm()}, norm of b = {b.norm()}')
+
 ############compute x FOR INITIALIZATION OF PCG
+print('Solve a problem with A and H3')
 # Random initial guess
 print('Random rhs')
-b.setRandom()
+#b.setRandom()
 
 x.setRandom()
 
@@ -109,18 +163,19 @@ x *= xnorm
 #Required for PPCG (projected preconditioner)
 #Doesn't hurt or help the hybrid and additive preconditioners
 #the initial guess is passed to the PCG below with the option ksp.setInitialGuessNonzero(True)
-pcbnn.proj.project(x)
-xtild = pcbnn.proj.coarse_init(b)
+
+pcbnn.proj3.project(x)
+xtild = pcbnn.proj3.coarse_init(b)
 tmp = xtild.norm()
 if mpi.COMM_WORLD.rank == 0:
     print(f'norm xtild (coarse component of solution) {tmp}')
 x += xtild
 ############END of: compute x FOR INITIALIZATION OF PCG
 
-############SETUP KSP
+#############SETUP KSP
 ksp = PETSc.KSP().create()
-ksp.setOperators(Apos)
-# ksp.setOptionsPrefix("global")
+ksp.setOperators(pcbnn.A)
+ksp.setOptionsPrefix("global_ksp_")
 
 pc = ksp.pc
 pc.setType('python')
@@ -144,11 +199,10 @@ ksp.solve(b, x)
 if ksp.getInitialGuessNonzero() == False:
     x+=xtild
 
-Aposx = x.duplicate()
-pcbnn.Apos.mult(x,Aposx)
-print(f'norm of Apos x - b = {(Aposx - b).norm()}, norm of b = {b.norm()}')
+Ax = x.duplicate()
+pcbnn.A.mult(x,Ax)
+print(f'norm of A x - b = {(Ax - b).norm()}, norm of b = {b.norm()}')
 
-#print('I arrive here')
 
 viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)

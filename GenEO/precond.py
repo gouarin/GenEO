@@ -510,6 +510,7 @@ class PCNew:
         self.ksp_Atildes_forSLEPc = ksp_Atildes_forSLEPc
         self.ksp_Ms_forSLEPc = ksp_Ms_forSLEPc
         self.work = work
+        self.work_2 = work.copy()
         self.works_1 = works
         self.works_2 = works_2
         self.scatter_l2g = scatter_l2g
@@ -522,7 +523,74 @@ class PCNew:
         else:
           self.V0s = minV0s
 
-        self.proj = coarse_operators(self.V0s,self.Apos,self.scatter_l2g,self.works_1,self.work)
+        self.proj2 = coarse_operators(self.V0s,self.Apos,self.scatter_l2g,self.works_1,self.work)
+#        work.set(1.)
+#        test = work.copy()
+#        test = self.proj2.coarse_init(work)
+#        testb = work.copy()
+#        self.proj2.project(testb)
+#        testc = work.copy()
+#        self.proj2.project_transpose(testc)
+#        testd = work.copy()
+#        self.apply([], work,testd)
+        self.H2 = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
+        self.H2.setPythonContext(H2_ctx(self.projCS, self.addCS, self.proj2, self.scatter_l2g, self.ksp_Atildes, self.works_1, self.works_2 ))
+        self.H2.setUp()
+
+        self.ksp_Apos = PETSc.KSP().create(comm=PETSc.COMM_WORLD)
+        self.ksp_Apos.setOptionsPrefix("ksp_Apos_")
+        self.ksp_Apos.setOperators(Apos)
+        self.ksp_Apos.setType("cg")
+        self.pc_Apos = self.ksp_Apos.getPC()
+        self.pc_Apos.setType('python')
+        self.pc_Apos.setPythonContext(H2_ctx(self.projCS, self.addCS, self.proj2, self.scatter_l2g, self.ksp_Atildes, self.works_1, self.works_2 ))
+
+        self.ksp_Apos.setFromOptions()
+        self.pc_Apos.setFromOptions()
+        #At this point the preconditioner for Apos is ready
+        print(f'{len(self.proj2.V0)=}') 
+        works.set(0.)
+        V0neg = []
+        for i in range(mpi.COMM_WORLD.size):
+            nnegi = len(Vnegs) if i == mpi.COMM_WORLD.rank else None
+            nnegi = mpi.COMM_WORLD.bcast(nnegi, root=i)
+            for j in range(nnegi):
+                V0neg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
+        AposinvV0 = []
+        for vec in V0neg:
+            self.works = vec.copy()
+            self.work.set(0)
+            self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
+            #debug1 = np.sqrt(self.work.dot(self.work))
+            #debug4 = self.work.norm()
+            #debug3 = np.sqrt(self.works.dot(self.works))
+            #debug5 = self.works.norm()
+            #print(f'normworks {debug3} = {debug5} normwork {debug1} = {debug4}')
+#            print('WARNING this should be a solve with Apos')
+#HERE
+            #TODO implement initializatio of coarse solve in case projected prec
+            self.ksp_Apos.solve(self.work,self.work_2)
+            AposinvV0.append(self.work_2.copy())
+        self.V0neg = V0neg
+        self.proj3 = coarse_operators(self.V0neg,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
+
+        work.set(1.)
+        test2 = work.copy()
+        self.H2.mult(work,test2)
+#        work.set(1.)
+#        test2 = work.copy()
+#        test2 = self.proj2.coarse_init(work)
+#        test2b = work.copy()
+#        self.proj2.project(test2b)
+#        test2c = work.copy()
+#        self.proj2.project_transpose(test2c)
+#        test2d = work.copy()
+#        self.apply([], work,test2d)
+#        print(f'norm test = {test.norm()} = {test2.norm()} = norm test2; normdiff = {(test-test2).norm()}')
+#        print(f'norm testb = {testb.norm()} = {test2b.norm()} = norm test2b; normdiff = {(testb-test2b).norm()}')
+#        print(f'norm testc = {testc.norm()} = {test2c.norm()} = norm test2c; normdiff = {(testc-test2c).norm()}')
+#        print(f'norm testd = {testd.norm()} = {test2d.norm()} = norm test2d; normdiff = {(testd-test2d).norm()}')
+  
 
 ##Debug DEBUG
         works_3 = works.copy()
@@ -577,7 +645,6 @@ class PCNew:
 #        works.setRandom()
 #        Atildes.mult(works,works_3)
 #        self.ksp_Atildes.solve(works_3,works_4)  
-#        #HERE
 #        Atildes.mult(works_4,works_2)
 #        works_5 = works_2 - works_3 
 #        print(f'norm x = {works.norm()}; Atilde*x = {works_3.norm()} = norm Atilde*(Atildes\Atildes)*x = {works_2.norm()}; normdiff = {works_5.norm()}')
@@ -593,39 +660,39 @@ class PCNew:
 #        testdiff = test-test2
 #        print(f'norm of |.|_Apos = {np.sqrt(test.dot(work))} = |.|_Apos_debug = {np.sqrt(test2.dot(work))} ; norm of diff = {testdiff.norm()}')
 ### 
-###check that the projection in proj is a self.proj.A orth projection
+###check that the projection in proj2 is a self.proj2.A orth projection
 #        #work.setRandom()
 #        work.set(1.)
 #        test = work.copy()
-#        self.proj.project(test)
+#        self.proj2.project(test)
 #        test2 = test.copy()
-#        self.proj.project(test2)
+#        self.proj2.project(test2)
 #        testdiff = test-test2
 #        print(f'norm(Pi x - Pi Pix) = {testdiff.norm()} = 0') 
-#        self.proj.A.mult(test,test2)
+#        self.proj2.A.mult(test,test2)
 #        test3 = work.duplicate()
-#        self.proj.A.mult(work,test3)
+#        self.proj2.A.mult(work,test3)
 #        print(f'|Pi x|_A^2 - |x|_A^2 = {test.dot(test2)} - {work.dot(test3)} = {test.dot(test2) - work.dot(test3)} < 0 ')
 #        #test2 = A Pi x ( = Pit A Pi x)
 #        test3 = test2.copy()
-#        self.proj.project_transpose(test3)
+#        self.proj2.project_transpose(test3)
 #        test = test3.copy()
-#        self.proj.project_transpose(test)
+#        self.proj2.project_transpose(test)
 #        testdiff = test3 - test2
 #        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare with norm(A Pi x) = {test2.norm()} ') 
 #        #work.setRandom()
-#        work.set(1.)
-#        test2 = work.copy()
-#        self.proj.project_transpose(test2)
-#        test2 = -1*test2
-#        test2 += work
-#    
-#        test = work.copy()
-#        test = self.proj.coarse_init(work)
-#        test3 = work.duplicate()
-#        self.proj.A.mult(test,test3)
-#
-#        print(f'norm(A coarse_init(b)) = {test3.norm()} = {test2.norm()} = norm((I-Pit b)); norm diff = {(test2 - test3).norm()}')   
+        work.set(1.)
+        #test2 = work.copy()
+        #self.proj2.project_transpose(test2)
+        #test2 = -1*test2
+        #test2 += work
+    
+        #test = work.copy()
+        #test = self.proj2.coarse_init(work)
+        #test3 = work.duplicate()
+        #self.proj2.A.mult(test,test3)
+
+        #print(f'norm(A coarse_init(b)) = {test3.norm()} = {test2.norm()} = norm((I-Pit b)); norm diff = {(test2 - test3).norm()}')   
 #
 ## END Debug DEBUG
 #        self.work.setRandom()
@@ -656,19 +723,15 @@ class PCNew:
 ########################
         xd = x.copy()
         if self.projCS == True:
-            self.proj.project_transpose(xd)
+            self.proj3.project_transpose(xd)
 
-        self.scatter_l2g(xd, self.works_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
-        self.ksp_Atildes.solve(self.works_1, self.works_2)
-
-        y.set(0.)
-        self.scatter_l2g(self.works_2, y, PETSc.InsertMode.ADD_VALUES)
+        self.H2.mult(xd,y)
         if self.projCS == True:
-            self.proj.project(y)
+            self.proj3.project(y)
 
         if self.addCS == True:
             xd = x.copy()
-            ytild = self.proj.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
+            ytild = self.proj3.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
             y += ytild
 
     def MP_mult(self, x, y):
@@ -824,3 +887,36 @@ class projVposs_ctx(object):
     def mult(self, mat, x, y):
         self.projVnegs(-x,y)
         y.axpy(1.,x) 
+
+
+class H2_ctx(object):
+    def __init__(self, projCS, addCS, proj2, scatter_l2g, ksp_Atildes, works_1, works_2 ):
+        self.projCS = projCS
+        self.addCS = addCS
+        self.proj2 = proj2
+        self.scatter_l2g = scatter_l2g
+        self.ksp_Atildes = ksp_Atildes
+        self.works_1 = works_1
+        self.works_2 = works_2
+
+    def mult(self,mat,x,y):
+        self.apply([],x,y)     
+    def apply(self,pc, x, y):
+        xd = x.copy()
+        if self.projCS == True:
+            self.proj2.project_transpose(xd)
+
+        self.scatter_l2g(xd, self.works_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        self.ksp_Atildes.solve(self.works_1, self.works_2)
+
+        y.set(0.)
+        self.scatter_l2g(self.works_2, y, PETSc.InsertMode.ADD_VALUES)
+        if self.projCS == True:
+            self.proj2.project(y)
+
+        if self.addCS == True:
+            xd = x.copy()
+            ytild = self.proj2.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
+            y += ytild
+
+
