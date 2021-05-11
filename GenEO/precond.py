@@ -287,6 +287,7 @@ class PCNew:
         #temp = Bs.getValuesCSR()
 
         work, _ = A_mpiaij.getVecs()
+        work_2 = work.duplicate()
         works, _ = As.getVecs()
         works_2 = works.duplicate()
         mus = works.duplicate()
@@ -374,17 +375,33 @@ class PCNew:
         #PETSc.Sys.Print('for Bs in subdomain {}, eigenvalues: {} {}'.format(mpi.COMM_WORLD.rank, Dnegs, Dposs), comm=PETSc.COMM_SELF)
         nnegs = len(Dnegs)
         #print(f'length of Dnegs {nnegs}')
-        #print(f'values of Dnegs {np.array(Dnegs)}')
+        print(f'values of Dnegs {np.array(Dnegs)}')
 
-
-#        Dnegs = np.diag(Dnegs) #TODO Loic: make it sparse
-#        Vnegs = np.array(Vnegs)
-#        DVnegs = Dnegs.dot(Vnegs)
-#        Dposs = np.diag(Dposs)
-#        print(f' diag of Dnegs {np.diag(Dnegs)}')
-#        print(f'shape of Dnegs {Dnegs.shape}')
-#        print(f'shape of Vnegs {Vnegs.shape}')
         #END diagonalize Bs
+        works.set(0.)
+        RsVnegs = []
+        Vneg = []
+        Dneg = []
+        RsDVnegs = []
+        for i in range(mpi.COMM_WORLD.size):
+            nnegi = len(Vnegs) if i == mpi.COMM_WORLD.rank else None
+            nnegi = mpi.COMM_WORLD.bcast(nnegi, root=i)
+            for j in range(nnegi):
+                Vneg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
+                dnegi = Dnegs[j] if i == mpi.COMM_WORLD.rank else None
+                dnegi = mpi.COMM_WORLD.bcast(dnegi, root=i)
+                Dneg.append(dnegi)
+                #print(f'i Dneg[i] = {i} {Dneg[i]}')
+        for i, vec in enumerate(Vneg):
+            work.set(0)
+            scatter_l2g(vec, work, PETSc.InsertMode.ADD_VALUES)
+            scatter_l2g(work, works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+
+            if works.norm() != 0:
+                RsVnegs.append(works.copy())
+                RsDVnegs.append(Dneg[i]*works.copy())
+            #TO DO: here implement RsVnegs and RsDVnegs
+        #self.Vneg = Vneg
 
 #        self.Vnegs = Vnegs
 #        self.DVnegs = DVnegs
@@ -392,7 +409,7 @@ class PCNew:
 
 #Local Apos and Aneg
         Aneg = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
-        Aneg.setPythonContext(Aneg_ctx(Vnegs, DVnegs, scatter_l2g, works, work))
+        Aneg.setPythonContext(Aneg_ctx(Vnegs, DVnegs, scatter_l2g, works, works_2))
         Aneg.setUp()
 
         Apos = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
@@ -417,9 +434,9 @@ class PCNew:
         projVposs.setUp()
 
         #TODO Implement RsAposRsts, this is the restriction of Apos to the dofs in this subdomain. So it applies to local vectors but has non local operations
-        #RsAposRsts = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF) #or COMM_WORLD ?
-        #RsAposRsts.setPythonContext(RsAposRsts_ctx(s,Apos,scatter_l2g))
-        #RsAposRsts.setUp()
+        RsAposRsts = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF) #or COMM_WORLD ?
+        RsAposRsts.setPythonContext(RsAposRsts_ctx(As,RsVnegs,RsDVnegs))
+        RsAposRsts.setUp()
 
         invAposs = PETSc.Mat().createPython([works.getSizes(), works.getSizes()], comm=PETSc.COMM_SELF)
         invAposs.setPythonContext(invAposs_ctx(Bs_ksp, projVposs ))
@@ -458,7 +475,6 @@ class PCNew:
 
         # the default local solver is the scaled non assembled local matrix (as in BNN)
         if self.switchtoASM:
-            print('The GenEO coarse space for this Atildes with global opeator Apos is not implemented yet, the component for eigmax is missing')
             Atildes = As
             if mpi.COMM_WORLD.rank == 0:
                 print('The user has chosen to switch to Additive Schwarz instead of BNN.')
@@ -470,8 +486,9 @@ class PCNew:
             pc_Atildes.setType('cholesky')
             pc_Atildes.setFactorSolverType('mumps')
             ksp_Atildes.setFromOptions()
-            minV0s = minimal_V0(ksp_Atildes).V0s
+            minV0s = minimal_V0(ksp_Atildes,invmusVnegs).V0s
 
+            #once a ksp has been passed to SLEPs it cannot be used again so we use a second ksp for SLEPc as a temporary fix
             ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
             ksp_Atildes_forSLEPc.setOptionsPrefix("ksp_Atildes_")
             ksp_Atildes_forSLEPc.setOperators(Atildes)
@@ -492,6 +509,7 @@ class PCNew:
             ksp_Atildes.setFromOptions()
             minV0s = invmusVnegs
 
+            #once a ksp has been passed to SLEPs it cannot be used again so we use a second ksp for SLEPc as a temporary fix
             ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
             ksp_Atildes_forSLEPc.setOptionsPrefix("ksp_Atildes_")
             ksp_Atildes_forSLEPc.setOperators(Atildes)
@@ -505,20 +523,25 @@ class PCNew:
         self.Apos = Apos
         self.Ms = Ms
         self.As = As
+        self.RsAposRsts = RsAposRsts
         self.ksp_Atildes = ksp_Atildes
         self.ksp_Ms = ksp_Ms
         self.ksp_Atildes_forSLEPc = ksp_Atildes_forSLEPc
         self.ksp_Ms_forSLEPc = ksp_Ms_forSLEPc
         self.work = work
-        self.work_2 = work.copy()
+        self.work_2 = work_2
         self.works_1 = works
         self.works_2 = works_2
         self.scatter_l2g = scatter_l2g
         self.mult_max = mult_max
         self.ksp_Atildes = ksp_Atildes
 
+        self.works_1.set(1.)
+        self.RsAposRsts.mult(self.works_1,self.works_2)
+
         if self.GenEO == True:
-          GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,minV0s,self.ksp_Ms_forSLEPc)
+          #GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,minV0s,self.ksp_Ms_forSLEPc)
+          GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.RsAposRsts,self.mult_max,minV0s,self.ksp_Ms_forSLEPc)
           self.V0s = GenEOV0.V0s
         else:
           self.V0s = minV0s
@@ -550,46 +573,29 @@ class PCNew:
         #At this point the preconditioner for Apos is ready
         print(f'{len(self.proj2.V0)=}') 
         works.set(0.)
-        V0neg = []
+        Vneg = []
         for i in range(mpi.COMM_WORLD.size):
             nnegi = len(Vnegs) if i == mpi.COMM_WORLD.rank else None
             nnegi = mpi.COMM_WORLD.bcast(nnegi, root=i)
             for j in range(nnegi):
-                V0neg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
+                Vneg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
         AposinvV0 = []
-        for vec in V0neg:
+        for vec in Vneg:
             self.works = vec.copy()
             self.work.set(0)
             self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
-            #debug1 = np.sqrt(self.work.dot(self.work))
-            #debug4 = self.work.norm()
-            #debug3 = np.sqrt(self.works.dot(self.works))
-            #debug5 = self.works.norm()
-            #print(f'normworks {debug3} = {debug5} normwork {debug1} = {debug4}')
-#            print('WARNING this should be a solve with Apos')
-#HERE
             #TODO implement initializatio of coarse solve in case projected prec
             self.ksp_Apos.solve(self.work,self.work_2)
             AposinvV0.append(self.work_2.copy())
-        self.V0neg = V0neg
-        self.proj3 = coarse_operators(self.V0neg,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
+            #TO DO: here implement RsVnegs and RsDVnegs
+        self.Vneg = Vneg
+        self.proj3 = coarse_operators(self.Vneg,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
 
         work.set(1.)
         test2 = work.copy()
         self.H2.mult(work,test2)
-#        work.set(1.)
-#        test2 = work.copy()
-#        test2 = self.proj2.coarse_init(work)
-#        test2b = work.copy()
-#        self.proj2.project(test2b)
-#        test2c = work.copy()
-#        self.proj2.project_transpose(test2c)
-#        test2d = work.copy()
-#        self.apply([], work,test2d)
-#        print(f'norm test = {test.norm()} = {test2.norm()} = norm test2; normdiff = {(test-test2).norm()}')
-#        print(f'norm testb = {testb.norm()} = {test2b.norm()} = norm test2b; normdiff = {(testb-test2b).norm()}')
-#        print(f'norm testc = {testc.norm()} = {test2c.norm()} = norm test2c; normdiff = {(testc-test2c).norm()}')
-#        print(f'norm testd = {testd.norm()} = {test2d.norm()} = norm test2d; normdiff = {(testd-test2d).norm()}')
+
+
   
 
 ##Debug DEBUG
@@ -771,10 +777,10 @@ class PCNew:
         self.mult(x,y)
 
 class Aneg_ctx(object):
-    def __init__(self, Vnegs, DVnegs, scatter_l2g, works, work):
+    def __init__(self, Vnegs, DVnegs, scatter_l2g, works, works_2):
         self.scatter_l2g = scatter_l2g
-        self.work = works
         self.works = works
+        self.works_2 = works_2
         self.Vnegs = Vnegs
         self.DVnegs = DVnegs
         self.gamma = PETSc.Vec().create(comm=PETSc.COMM_SELF)
@@ -783,14 +789,10 @@ class Aneg_ctx(object):
     def mult(self, mat, x, y):
         y.set(0)
         self.scatter_l2g(x, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
-        for i,vec in enumerate(self.DVnegs):
-            self.gamma[i] = self.works.dot(vec)
-        self.works.set(0)
+        self.works_2.set(0)
         for i,vec in enumerate(self.Vnegs):
-            #if mpi.COMM_WORLD.rank == 0:
-            #    print(f'self.gamma[i]: {self.gamma[i]}')
-            self.works.axpy(self.gamma[i], vec)
-        self.scatter_l2g(self.works, y, PETSc.InsertMode.ADD_VALUES)
+            self.works_2.axpy(self.works.dot(self.DVnegs[i]) , vec)
+        self.scatter_l2g(self.works_2, y, PETSc.InsertMode.ADD_VALUES)
 
 class Apos_debug_ctx(object):
     def __init__(self, projVposs, Aposs, scatter_l2g, works, work):
@@ -820,18 +822,20 @@ class Anegs_ctx(object):
     def __init__(self, Vnegs, DVnegs):
         self.Vnegs = Vnegs
         self.DVnegs = DVnegs
-        self.gamma = PETSc.Vec().create(comm=PETSc.COMM_SELF)
-        self.gamma.setType(PETSc.Vec.Type.SEQ)
-        self.gamma.setSizes(len(self.Vnegs))
     def mult(self, mat, x, y):
         y.set(0)
-        for i,vec in enumerate(self.DVnegs):
-            self.gamma[i] = x.dot(vec)
         for i,vec in enumerate(self.Vnegs):
-            #if mpi.COMM_WORLD.rank == 0:
-            #    print(f'self.gamma[i]: {self.gamma[i]}')
-            y.axpy(self.gamma[i], vec)
+            y.axpy(x.dot(self.DVnegs[i]), vec)
 
+class RsAposRsts_ctx(object):
+    def __init__(self,As,RsVnegs,RsDVnegs):
+        self.As = As
+        self.RsVnegs = RsVnegs
+        self.RsDVnegs = RsDVnegs
+    def mult(self, mat, x, y):
+        self.As.mult(x,y)
+        for i,vec in enumerate(self.RsVnegs):
+            y.axpy(x.dot(self.RsDVnegs[i]), vec)
 
 class Aposs_ctx(object):
     def __init__(self,Bs, Anegs):
@@ -918,5 +922,4 @@ class H2_ctx(object):
             xd = x.copy()
             ytild = self.proj2.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
             y += ytild
-
 

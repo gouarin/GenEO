@@ -8,7 +8,6 @@ import mpi4py.MPI as mpi
 import numpy as np
 from .bc import bcApplyWest_vec
 from slepc4py import SLEPc
-import copy
 
 #def test(y,x):
 #    print(f'y1 {y}')
@@ -175,18 +174,6 @@ class GenEO_V0(object):
 
         """
         if tauGenEO_eigmax > 0:
-            ##### trick because of what I think is a bug in the interface with SLEPc
-            print('WARNING: the copy does not work')
-            self.copyksp_Atildes = self.ksp_Atildes
-            # self.copyksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
-            # self.copyksp_Atildes.setOptionsPrefix("copyksp_Atildes_")
-            # self.copyksp_Atildes.setOperators(self.Atildes)
-            # self.copyksp_Atildes.setType('preonly')
-            # self.copypc_Atildes = self.copyksp_Atildes.getPC()
-            # self.copypc_Atildes.setType('cholesky')
-            # self.copypc_Atildes.setFactorSolverType('mumps')
-            # self.copyksp_Atildes.setFromOptions()
-            #### end of the trick
             eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
             eps.setDimensions(nev=self.nev)
 
@@ -198,7 +185,7 @@ class GenEO_V0(object):
                 eps.setDeflationSpace(V0s)
             ST = eps.getST()
             ST.setType("sinvert")
-            ST.setKSP(self.copyksp_Atildes)
+            ST.setKSP(self.ksp_Atildes)
             eps.solve()
             if eps.getConverged() < self.nev:
                 PETSc.Sys.Print('WARNING: Only {} eigenvalues converged for GenEO_eigmax in subdomain {} whereas {} were requested'.format(eps.getConverged(), mpi.COMM_WORLD.rank, self.nev), comm=self.comm)
