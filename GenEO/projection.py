@@ -9,13 +9,6 @@ import numpy as np
 from .bc import bcApplyWest_vec
 from slepc4py import SLEPc
 
-#def test(y,x):
-#    print(f'y1 {y}')
-#    y +=x
-#    print(f'y2 {y}')
-#    y= 1
-#    print(f'y3 {y}')
-
 class minimal_V0(object):
     def __init__(self,ksp_Atildes,V0s=[]):
         """
@@ -335,7 +328,8 @@ class coarse_operators(object):
 
         """
         if self.verbose:
-            PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors in total'.format(mpi.COMM_WORLD.rank, len(V0s)), comm=self.comm)
+            if self.V0_is_global == False:
+                PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors in total'.format(mpi.COMM_WORLD.rank, len(V0s)), comm=self.comm)
 
         self.work2 = self.work.duplicate()
         if(self.V0_is_global == False):
@@ -421,7 +415,6 @@ class coarse_operators(object):
                 tmp = AV0[j].dot(self.work)
                 Delta[i, j] = tmp
                 Delta[j, i] = tmp
-                #print(f'i j Deltaij: {i} {j} {tmp}')
         Delta.assemble()
         ksp_Delta = PETSc.KSP().create(comm=PETSc.COMM_SELF)
         ksp_Delta.setOperators(Delta)
@@ -493,8 +486,6 @@ class coarse_operators(object):
                 self.gamma[i] = vec.dot(rhs)
 
         self.ksp_Delta.solve(self.gamma, alpha)
-        if self.gamma.dot(alpha) <0:
-            print(f'self.Gamma.dot(alpha) = {self.Gamma.dot(alpha)} < 0')
 
         if(self.V0_is_global == False):
             self.works.set(0)
@@ -537,7 +528,7 @@ class coarse_operators(object):
             mpi.COMM_WORLD.Allreduce([self.gamma_tmp, mpi.DOUBLE], [self.gamma, mpi.DOUBLE], mpi.SUM)
         else:
             for i, vec in enumerate(self.V0):
-                self.gamma_tmp[i] = vec.dot(x)
+                self.gamma[i] = vec.dot(x)
             
         self.ksp_Delta.solve(self.gamma, alpha)
 
@@ -860,7 +851,6 @@ class projection(object):
                 tmp = AV0[j].dot(work)
                 Delta[i, j] = tmp
                 Delta[j, i] = tmp
-                #print(f'i j Deltaij: {i} {j} {tmp}')
         Delta.assemble()
         ksp_Delta = PETSc.KSP().create(comm=PETSc.COMM_SELF)
         ksp_Delta.setOperators(Delta)

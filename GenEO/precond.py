@@ -302,9 +302,8 @@ class PCNew:
         scatter_l2g(work, mus, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         invmus = mus.duplicate()
         invmus = 1/mus
-        #if mpi.COMM_WORLD.rank == 0:
-        #    invmus.view()
-        #print(f'multmax: {mult_max}')
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'multmax: {mult_max}')
 
 
         DVnegs = []
@@ -373,7 +372,7 @@ class PCNew:
                 invmusVnegs.append(invmus * Vnegs[-1])
             else :
                 Dposs.append(tempscalar)
-        PETSc.Sys.Print('for Bs in subdomain {}: ncv= {} with {} negative eigs (nev = {})'.format(mpi.COMM_WORLD.rank, eps.getConverged(), len(Vnegs), self.nev), comm=PETSc.COMM_SELF)
+        PETSc.Sys.Print('for Bs in subdomain {}: ncv= {} with {} negative eigs'.format(mpi.COMM_WORLD.rank, eps.getConverged(), len(Vnegs), self.nev), comm=PETSc.COMM_SELF)
         #PETSc.Sys.Print('for Bs in subdomain {}, eigenvalues: {} {}'.format(mpi.COMM_WORLD.rank, Dnegs, Dposs), comm=PETSc.COMM_SELF)
         nnegs = len(Dnegs)
         #print(f'length of Dnegs {nnegs}')
@@ -574,10 +573,10 @@ class PCNew:
         self.ksp_Apos.setFromOptions()
         self.pc_Apos.setFromOptions()
         #At this point the preconditioner for Apos is ready
-        print(f'{len(self.proj2.V0)=}') 
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'#V0(H2) = rank(Ker(Pi2)) = {len(self.proj2.V0)}') 
         works.set(0.)
         Vneg = []
-        debugVneg = []
         for i in range(mpi.COMM_WORLD.size):
             nnegi = len(Vnegs) if i == mpi.COMM_WORLD.rank else None
             nnegi = mpi.COMM_WORLD.bcast(nnegi, root=i)
@@ -588,7 +587,6 @@ class PCNew:
             self.works = vec.copy()
             self.work.set(0)
             self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
-            debugVneg.append(self.work.copy())
             #TODO implement initializatio of coarse solve in case projected prec
             self.work_2 = self.proj2.coarse_init(self.work)  
             self.ksp_Apos.solve(self.work,self.work_2)
@@ -596,13 +594,9 @@ class PCNew:
             ##
             Aposx = self.work.duplicate() 
             Apos.mult(self.work_2,Aposx) 
-            print(f'norm of Apos x - b = {(Aposx - self.work).norm()}, norm of b = {self.work.norm()}')
             ##
-        #self.Vneg = Vneg
         self.AposinvV0 = AposinvV0
         self.proj3 = coarse_operators(self.AposinvV0,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
-        #self.proj3 = coarse_operators(debugVneg,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
-        #self.proj3 = coarse_operators(self.V0s,self.A,self.scatter_l2g,self.works_1,self.work)
         self.proj = self.proj3 #this name is consistent with the proj in PCBNN
 
 ##Debug DEBUG
@@ -692,7 +686,7 @@ class PCNew:
 #        test = test3.copy()
 #        self.proj2.project_transpose(test)
 #        testdiff = test3 - test2
-#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare with norm(A Pi x) = {test2.norm()} ') 
+#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare to norm(A Pi x) = {test2.norm()} ') 
 #        #work.setRandom()
 #        work.set(1.)
 #        test2 = work.copy()
@@ -723,7 +717,7 @@ class PCNew:
 #        test = test3.copy()
 #        self.proj3.project_transpose(test)
 #        testdiff = test3 - test2
-#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare with norm(A Pi x) = {test2.norm()} ') 
+#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare to norm(A Pi x) = {test2.norm()} ') 
 #        #work.setRandom()
 #        work.set(1.)
 #        test2 = work.copy()

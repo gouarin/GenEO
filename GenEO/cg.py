@@ -390,9 +390,6 @@ class KSP_PCG(MyKSP):
             alpha = delta / p.dot(Ap)
             # print(z.norm())
             ptAp = p.dot(Ap)
-            if mpi.COMM_WORLD.rank == 0:
-                print(f'{delta=}')
-                print(f'{ptAp=}')
             if self.Ritz:
                 self.alpha_save.append(alpha)
             x.axpy(+alpha, p)
