@@ -344,18 +344,21 @@ class coarse_operators(object):
                 nrbl = len(V0s) if i == mpi.COMM_WORLD.rank else None
                 nrbl = mpi.COMM_WORLD.bcast(nrbl, root=i)
                 for irbm in range(nrbl):
-                    V0.append(V0s[irbm] if i == mpi.COMM_WORLD.rank else None)
+                    V0.append(V0s[irbm].copy() if i == mpi.COMM_WORLD.rank else None)
         else:
-            V0 = V0s
+            V0 = V0s.copy()
 
         AV0 = []
         for vec in V0:
-            if vec:
-                self.works = vec.copy()
+            if(self.V0_is_global == False):
+                if vec:
+                    self.works = vec.copy()
+                else:
+                    self.works.set(0.)
+                self.work.set(0)
+                self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
             else:
-                self.works.set(0.)
-            self.work.set(0)
-            self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
+                self.work = vec.copy()  
             #debug1 = np.sqrt(self.work.dot(self.work))
             #debug4 = self.work.norm()
             #debug3 = np.sqrt(self.works.dot(self.works))
@@ -363,17 +366,22 @@ class coarse_operators(object):
             #print(f'normworks {debug3} = {debug5} normwork {debug1} = {debug4}')
             self.A.mult(self.work,self.work2)
             AV0.append(self.work2.copy())
-            self.scatter_l2g(AV0[-1], self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
             tmp = np.sqrt(self.work.dot(self.work2))
-            if vec:
-                vec.scale(1./tmp)
-                self.works = vec.copy()
+            if(self.V0_is_global == False):
+                self.scatter_l2g(AV0[-1], self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+                if vec:
+                    vec.scale(1./tmp)
+                    self.works = vec.copy()
+                else:
+                    self.works.set(0)
+                self.work.set(0)
+                self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
+                #self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
+                #self.A.mult(self.work,self.work2)
+                self.A.mult(self.work,AV0[-1])
             else:
-                self.works.set(0)
-            self.work.set(0)
-            self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
-            #self.A.mult(self.work,self.work2)
-            self.A.mult(self.work,AV0[-1])
+                vec.scale(1./tmp)
+                self.A.mult(vec,AV0[-1])
             #self.A.mult(self.work,AV0[-1])
             # AV0[-1] = self.work2.copy()
             # AV0[-1] = xtmp.copy()
@@ -399,13 +407,16 @@ class coarse_operators(object):
         Delta.setOption(PETSc.Mat.Option.SYMMETRIC, True)
         Delta.setPreallocationDense(None)
         for i, vec in enumerate(V0):
-            if vec:
-                self.works = vec.copy()
-            else:
-                self.works.set(0)
+            if(self.V0_is_global == False):
+                if vec:
+                    self.works = vec.copy()
+                else:
+                    self.works.set(0)
 
-            self.work.set(0)
-            self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
+                self.work.set(0)
+                self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
+            else:
+                self.work = vec.copy()
             for j in range(i+1):
                 tmp = AV0[j].dot(self.work)
                 Delta[i, j] = tmp
@@ -437,12 +448,16 @@ class coarse_operators(object):
 
         self.ksp_Delta.solve(self.gamma, alpha)
 
-        self.works.set(0)
-        for i, vec in enumerate(self.V0):
-            if vec:
-                self.works.axpy(-alpha[i], vec)
+        if(self.V0_is_global == False):
+            self.works.set(0)
+            for i, vec in enumerate(self.V0):
+                if vec:
+                    self.works.axpy(-alpha[i], vec)
 
-        self.scatter_l2g(self.works, x, PETSc.InsertMode.ADD_VALUES)
+            self.scatter_l2g(self.works, x, PETSc.InsertMode.ADD_VALUES)
+        else:
+            for i, vec in enumerate(self.V0):
+                x.axpy(-alpha[i], vec)
 
     def coarse_init(self, rhs):
         """
@@ -464,25 +479,38 @@ class coarse_operators(object):
 
         alpha = self.gamma.duplicate()
 
-        self.scatter_l2g(rhs, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
-        self.gamma.set(0)
-        self.gamma_tmp.set(0)
-        for i, vec in enumerate(self.V0):
-            if vec:
-                self.gamma_tmp[i] = vec.dot(self.works)
+        if(self.V0_is_global == False):
+            self.scatter_l2g(rhs, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+            self.gamma.set(0)
+            self.gamma_tmp.set(0)
+            for i, vec in enumerate(self.V0):
+                if vec:
+                    self.gamma_tmp[i] = vec.dot(self.works)
 
-        mpi.COMM_WORLD.Allreduce([self.gamma_tmp, mpi.DOUBLE], [self.gamma, mpi.DOUBLE], mpi.SUM)
+            mpi.COMM_WORLD.Allreduce([self.gamma_tmp, mpi.DOUBLE], [self.gamma, mpi.DOUBLE], mpi.SUM)
+        else:
+            for i, vec in enumerate(self.V0):
+                self.gamma[i] = vec.dot(rhs)
 
         self.ksp_Delta.solve(self.gamma, alpha)
+        if self.gamma.dot(alpha) <0:
+            print(f'self.Gamma.dot(alpha) = {self.Gamma.dot(alpha)} < 0')
 
-        self.works.set(0)
-        for i, vec in enumerate(self.V0):
-            if vec:
-                self.works.axpy(alpha[i], vec)
+        if(self.V0_is_global == False):
+            self.works.set(0)
+            for i, vec in enumerate(self.V0):
+                if vec:
+                    self.works.axpy(alpha[i], vec)
 
-        out = rhs.duplicate()
-        out.set(0)
-        self.scatter_l2g(self.works, out, PETSc.InsertMode.ADD_VALUES)
+            out = rhs.duplicate()
+            out.set(0)
+            self.scatter_l2g(self.works, out, PETSc.InsertMode.ADD_VALUES)
+        else:
+            out = rhs.duplicate()
+            out.set(0)
+            for i, vec in enumerate(self.V0):
+                    out.axpy(alpha[i], vec)
+
         return out
 
     def project_transpose(self, x):
@@ -496,16 +524,21 @@ class coarse_operators(object):
            Vector to which the projection is applied and in which the result is stored.
 
         """
+
         alpha = self.gamma.duplicate()
+        if(self.V0_is_global == False):
+            self.scatter_l2g(x, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+            self.gamma.set(0)
+            self.gamma_tmp.set(0)
+            for i, vec in enumerate(self.V0):
+                if vec:
+                    self.gamma_tmp[i] = vec.dot(self.works)
 
-        self.scatter_l2g(x, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
-        self.gamma.set(0)
-        self.gamma_tmp.set(0)
-        for i, vec in enumerate(self.V0):
-            if vec:
-                self.gamma_tmp[i] = vec.dot(self.works)
-
-        mpi.COMM_WORLD.Allreduce([self.gamma_tmp, mpi.DOUBLE], [self.gamma, mpi.DOUBLE], mpi.SUM)
+            mpi.COMM_WORLD.Allreduce([self.gamma_tmp, mpi.DOUBLE], [self.gamma, mpi.DOUBLE], mpi.SUM)
+        else:
+            for i, vec in enumerate(self.V0):
+                self.gamma_tmp[i] = vec.dot(x)
+            
         self.ksp_Delta.solve(self.gamma, alpha)
 
         for i in range(len(self.V0)):

@@ -35,8 +35,8 @@ class MyKSP(object):
         normType = ksp.getNormType()
         if normType == PETSc.KSP.NormType.NORM_PRECONDITIONED:
             # FIX: print a message to inform that we use the natural norm
-            # norm = sqrt(r.dot(z))
-            norm = z.norm()
+            norm = sqrt(r.dot(z))
+            #norm = z.norm()
         elif normType == PETSc.KSP.NormType.NORM_UNPRECONDITIONED:
             norm = r.norm()
         # FIX petsc4py to use it
@@ -52,8 +52,8 @@ class MyKSP(object):
         comm = ksp.comm
 
         if context.verbose:
-            # output = f"\tnatural_norm -> {context.natural_norm[its]:10.8e}"
-            output = f"{norm}"
+            output = f"\tnatural_norm -> {context.natural_norm[its]:10.8e}"
+            #output = f"{norm}"
             if hasattr(context, 'ti'):
                 output += f"\n\tti -> {context.ti[its]:10.8e}"
             PETSc.Sys.Print(output, comm=comm)
@@ -67,8 +67,9 @@ class MyKSP(object):
         else:
             ksp.setConvergedReason(reason)
 
-        if its == 2:
-            sys.exit()
+        #if its == 2:
+        #    print('Exiting because of sys.exit()')
+        #    sys.exit()
         return reason
 
 class KSP_AMPCG(MyKSP):
