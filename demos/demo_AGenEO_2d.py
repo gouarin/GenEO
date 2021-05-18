@@ -25,6 +25,7 @@ E1 = OptDB.getReal('E1', 10**12)
 E2 = OptDB.getReal('E2', 10**6)
 nu1 = OptDB.getReal('nu1', 0.4)
 nu2 = OptDB.getReal('nu2', 0.4)
+test_case = OptDB.getString('test_case', 'default')
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
@@ -111,48 +112,51 @@ x *= xnorm
 #the initial guess is passed to the PCG below with the option ksp.setInitialGuessNonzero(True)
 
 
-print('solve a problem for Apos preconditioned by H2')
-pcbnn.proj2.project(x)
-xtild = pcbnn.proj2.coarse_init(b)
-tmp = xtild.norm()
-if mpi.COMM_WORLD.rank == 0:
-    print(f'norm xtild (coarse component of solution) {tmp}')
-x += xtild
-############END of: compute x FOR INITIALIZATION OF PCG
-
-#############SETUP KSP
-ksp_Apos = pcbnn.ksp_Apos
-ksp_Apos.setOptionsPrefix("")
-pc_Apos = ksp_Apos.pc
-pc_Apos = pcbnn.pc_Apos
-pc_Apos.setFromOptions()
-
-#ksp.setType("cg")
-# #pyKSP.callback = callback(da)
-ksp_Apos.setType(ksp_Apos.Type.PYTHON)
-pyKSP = KSP_PCG()
-ksp_Apos.setPythonContext(pyKSP)
-
-ksp_Apos.setInitialGuessNonzero(True)
-
-ksp_Apos.setFromOptions()
-#### END SETUP KSP
-
-###### SOLVE:
-ksp_Apos.solve(b, x)
-
-if ksp_Apos.getInitialGuessNonzero() == False:
-    x+=xtild
-
-Aposx = x.duplicate()
-pcbnn.Apos.mult(x,Aposx)
-print(f'norm of Apos x - b = {(Aposx - b).norm()}, norm of b = {b.norm()}')
+#print('solve a problem for Apos preconditioned by H2')
+#pcbnn.proj2.project(x)
+#xtild = pcbnn.proj2.coarse_init(b)
+#tmp = xtild.norm()
+#if mpi.COMM_WORLD.rank == 0:
+#    print(f'norm xtild (coarse component of solution) {tmp}')
+#x += xtild
+#############END of: compute x FOR INITIALIZATION OF PCG
+#
+##############SETUP KSP
+#ksp_Apos = pcbnn.ksp_Apos
+## ksp_Apos.setOptionsPrefix("")
+## pc_Apos = ksp_Apos.pc
+## pc_Apos = pcbnn.pc_Apos
+## pc_Apos.setFromOptions()
+#
+## ksp_Apos.setType("cg")
+##ksp_Apos.setComputeEigenvalues(True)
+## #pyKSP.callback = callback(da)
+## ksp_Apos.setType(ksp_Apos.Type.PYTHON)
+## pyKSP = KSP_PCG()
+## ksp_Apos.setPythonContext(pyKSP)
+#
+#ksp_Apos.setInitialGuessNonzero(True)
+#
+## ksp_Apos.setFromOptions()
+##### END SETUP KSP
+#
+####### SOLVE:
+#ksp_Apos.solve(b, x)
+#
+#print(pcbnn.ritz_eigs_apos)
+#
+#if ksp_Apos.getInitialGuessNonzero() == False:
+#    x+=xtild
+#
+#Aposx = x.duplicate()
+#pcbnn.Apos.mult(x,Aposx)
+#print(f'norm of Apos x - b = {(Aposx - b).norm()}, norm of b = {b.norm()}')
 #exit()
-#############compute x FOR INITIALIZATION OF PCG
+##############compute x FOR INITIALIZATION OF PCG
 print('Solve a problem with A and H3')
 # Random initial guess
-print('Random rhs')
-b.setRandom()
+#print('Random rhs')
+#b.setRandom()
 
 x.setRandom()
 
@@ -182,19 +186,38 @@ pc.setType('python')
 pc.setPythonContext(pcbnn)
 pc.setFromOptions()
 
-#ksp.setType("cg")
-
-ksp.setType(ksp.Type.PYTHON)
-pyKSP = KSP_PCG()
-ksp.setPythonContext(pyKSP)
+ksp.setType("cg")
+ksp.setComputeEigenvalues(True)
+#ksp.setType(ksp.Type.PYTHON)
+#pyKSP = KSP_PCG()
+#ksp.setPythonContext(pyKSP)
 ##pyKSP.callback = callback(da)
 
 ksp.setInitialGuessNonzero(True)
+ksp.setConvergenceHistory(True)
+
 ksp.setFromOptions()
 #### END SETUP KSP
 
 ###### SOLVE:
 ksp.solve(b, x)
+
+eigs = ksp.computeEigenvalues()
+
+print(eigs)
+
+print('convergence history', ksp.getConvergenceHistory())
+
+if mpi.COMM_WORLD.rank == 0:
+    np.savez(test_case,
+             convergence=np.asarray(ksp.getConvergenceHistory()[:]),
+             eigs=np.asarray(eigs[:]),
+             eigs_Apos=pcbnn.ritz_eigs_apos,
+    )
+np.savez(f'{test_case}_{mpi.COMM_WORLD.rank}',
+         nnegs=pcbnn.nnegs,
+
+)
 
 if ksp.getInitialGuessNonzero() == False:
     x+=xtild

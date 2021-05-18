@@ -231,6 +231,7 @@ class PCNew:
         self.H2projCS = OptDB.getBool('PCNew_H2CoarseProjection', True)
         self.H3addCS = OptDB.getBool('PCNew_H3addCoarseSolve', False)
         self.H3projCS = OptDB.getBool('PCNew_H3CoarseProjection', True)
+        self.compute_ritz_apos = OptDB.getBool('PCNew_ComputeRitzApos', False)
         self.nev = OptDB.getInt('PCNew_Bs_nev', 20) #number of vectors asked to SLEPc for cmputing negative part of Bs
 
         # Compute Bs (the symmetric matrix in the algebraic splitting of A)
@@ -537,6 +538,7 @@ class PCNew:
         self.scatter_l2g = scatter_l2g
         self.mult_max = mult_max
         self.ksp_Atildes = ksp_Atildes
+        self.nnegs = nnegs
 
         self.works_1.set(1.)
         self.RsAposRsts.mult(self.works_1,self.works_2)
@@ -566,7 +568,10 @@ class PCNew:
         self.ksp_Apos.setOptionsPrefix("ksp_Apos_")
         self.ksp_Apos.setOperators(Apos)
         self.ksp_Apos.setType("cg")
-        self.ksp_Apos.setInitialGuessNonzero(True) 
+        if self.compute_ritz_apos:
+            self.ksp_Apos.setComputeEigenvalues(True)
+
+        self.ksp_Apos.setInitialGuessNonzero(True)
         self.pc_Apos = self.ksp_Apos.getPC()
         self.pc_Apos.setType('python')
         self.pc_Apos.setPythonContext(H2_ctx(self.H2projCS, self.H2addCS, self.proj2, self.scatter_l2g, self.ksp_Atildes, self.works_1, self.works_2 ))
@@ -574,7 +579,7 @@ class PCNew:
         self.pc_Apos.setFromOptions()
         #At this point the preconditioner for Apos is ready
         if mpi.COMM_WORLD.rank == 0:
-            print(f'#V0(H2) = rank(Ker(Pi2)) = {len(self.proj2.V0)}') 
+            print(f'#V0(H2) = rank(Ker(Pi2)) = {len(self.proj2.V0)}')
         works.set(0.)
         Vneg = []
         for i in range(mpi.COMM_WORLD.size):
@@ -583,17 +588,22 @@ class PCNew:
             for j in range(nnegi):
                 Vneg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
         AposinvV0 = []
+        self.ritz_eigs_apos = None
         for vec in Vneg:
             self.works = vec.copy()
             self.work.set(0)
             self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
             #TODO implement initializatio of coarse solve in case projected prec
-            self.work_2 = self.proj2.coarse_init(self.work)  
+            self.work_2 = self.proj2.coarse_init(self.work)
             self.ksp_Apos.solve(self.work,self.work_2)
+            if self.compute_ritz_apos and self.ritz_eigs_apos is None:
+                self.ritz_eigs_apos = self.ksp_Apos.computeEigenvalues()
+                self.ksp_Apos.setComputeEigenvalues(False)
+
             AposinvV0.append(self.work_2.copy())
             ##
-            Aposx = self.work.duplicate() 
-            Apos.mult(self.work_2,Aposx) 
+            Aposx = self.work.duplicate()
+            Apos.mult(self.work_2,Aposx)
             ##
         self.AposinvV0 = AposinvV0
         self.proj3 = coarse_operators(self.AposinvV0,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
@@ -613,7 +623,7 @@ class PCNew:
 #        #works.set(1.)
 #        projVnegs.mult(works,works_2)
 #        projVposs.mult(works,works_3)
-#        print(f'{works_2.norm()**2} +  {works_3.norm()**2}= {works_2.norm()**2 +  works_3.norm()**2}  =  {(works.norm())**2}') 
+#        print(f'{works_2.norm()**2} +  {works_3.norm()**2}= {works_2.norm()**2 +  works_3.norm()**2}  =  {(works.norm())**2}')
 #        print(f'0 = {(works - works_2 - works_3).norm()} if the two projections sum to identity')
 ##Aposs = projVposs Bs projVposs = Bs projVposs  (it is implemented as Bs + Anegs)
 #        works_4 = works.copy()
@@ -625,35 +635,35 @@ class PCNew:
 #        Aposs.mult(works,works_4)
 #        print(f'check Aposs = projVposs Bs projVposs = Bs projVposs: {works_2.norm()} = {works_3.norm()} = {works_4.norm()}')
 #        print(f'norms of diffs (should be zero): {(works_2 - works_3).norm()}, {(works_2 - works_4).norm()}, {(works_3 - works_4).norm()}')
-###check that Aposs > 0 and Anegs >0 but Bs is indefinite + "Pythagoras"  
+###check that Aposs > 0 and Anegs >0 but Bs is indefinite + "Pythagoras"
 #        works_4 = works.copy()
-#        works.set(1.) #(with vector full of ones I get a negative Bs semi-norm) 
+#        works.set(1.) #(with vector full of ones I get a negative Bs semi-norm)
 #        Bs.mult(works,works_4)
 #        Aposs.mult(works,works_2)
 #        Anegs.mult(works,works_3)
 #        print(f'|.|_Bs {works_4.dot(works)} (can be neg or pos); |.|_Aposs {works_2.dot(works)} > 0;  |.|_Anegs  {works_3.dot(works)} >0')
 #        print(f' |.|_Bs^2 = |.|_Aposs^2 -  |.|_Anegs ^2 = {works_2.dot(works)} - {works_3.dot(works)} = {works_2.dot(works) - works_3.dot(works)} = {works_4.dot(works)} ')##
-###check that ksp_Aposs.solve(Aposs *  x) = projVposs x         
+###check that ksp_Aposs.solve(Aposs *  x) = projVposs x
 #        works_4 = works.copy()
 #        works.setRandom()
 #        #works.set(1.)
 #        projVposs.mult(works,works_2)
 #        Aposs(works,works_3)
-#        ksp_Aposs.solve(works_3,works_4)  
-#        works_5 = works_2 - works_4 
+#        ksp_Aposs.solve(works_3,works_4)
+#        works_5 = works_2 - works_4
 #        print(f'norm x = {works.norm()}; norm projVposs x = {works_2.norm()} = norm Aposs\Aposs*x = {works_4.norm()}; normdiff = {works_5.norm()}')
 ####check that mus*invmus = vec of ones
 #        works.set(1.0)
 #        works_2 = invmus*mus
 #        works_3 = works - works_2
 #        print(f'0 = norm(vec of ones - mus*invmus)   = {works_3.norm()}, mus in [{mus.min()}, {mus.max()}], invmus in [{invmus.min()}, {invmus.max()}]')
-###check that Ms*ksp_Ms.solve(Ms*x) = Ms*x  
+###check that Ms*ksp_Ms.solve(Ms*x) = Ms*x
 #        works_4 = works.copy()
 #        works.setRandom()
 #        Atildes.mult(works,works_3)
-#        self.ksp_Atildes.solve(works_3,works_4)  
+#        self.ksp_Atildes.solve(works_3,works_4)
 #        Atildes.mult(works_4,works_2)
-#        works_5 = works_2 - works_3 
+#        works_5 = works_2 - works_3
 #        print(f'norm x = {works.norm()}; Atilde*x = {works_3.norm()} = norm Atilde*(Atildes\Atildes)*x = {works_2.norm()}; normdiff = {works_5.norm()}')
 ###check Apos by implementing it a different way in Apos_debug
 #        Apos_debug = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
@@ -666,7 +676,7 @@ class PCNew:
 #        Apos_debug.mult(work,test2)
 #        testdiff = test-test2
 #        print(f'norm of |.|_Apos = {np.sqrt(test.dot(work))} = |.|_Apos_debug = {np.sqrt(test2.dot(work))} ; norm of diff = {testdiff.norm()}')
-### 
+###
 ###check that the projection in proj2 is a self.proj2.A orth projection
         #work.setRandom()
 #        work.set(1.)
@@ -675,7 +685,7 @@ class PCNew:
 #        test2 = test.copy()
 #        self.proj2.project(test2)
 #        testdiff = test-test2
-#        print(f'norm(Pi x - Pi Pix) = {testdiff.norm()} = 0') 
+#        print(f'norm(Pi x - Pi Pix) = {testdiff.norm()} = 0')
 #        self.proj2.A.mult(test,test2)
 #        test3 = work.duplicate()
 #        self.proj2.A.mult(work,test3)
@@ -686,14 +696,14 @@ class PCNew:
 #        test = test3.copy()
 #        self.proj2.project_transpose(test)
 #        testdiff = test3 - test2
-#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare to norm(A Pi x) = {test2.norm()} ') 
+#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare to norm(A Pi x) = {test2.norm()} ')
 #        #work.setRandom()
 #        work.set(1.)
 #        test2 = work.copy()
 #        self.proj2.project_transpose(test2)
 #        test2 = -1*test2
 #        test2 += work
-#    
+#
 #        test = work.copy()
 #        test = self.proj2.coarse_init(work)
 #        test3 = work.duplicate()
@@ -706,7 +716,7 @@ class PCNew:
 #        test2 = test.copy()
 #        self.proj3.project(test2)
 #        testdiff = test-test2
-#        print(f'norm(Pi x - Pi Pix) = {testdiff.norm()} = 0') 
+#        print(f'norm(Pi x - Pi Pix) = {testdiff.norm()} = 0')
 #        self.proj3.A.mult(test,test2)
 #        test3 = work.duplicate()
 #        self.proj3.A.mult(work,test3)
@@ -717,27 +727,27 @@ class PCNew:
 #        test = test3.copy()
 #        self.proj3.project_transpose(test)
 #        testdiff = test3 - test2
-#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare to norm(A Pi x) = {test2.norm()} ') 
+#        print(f'norm(A Pi x - Pit A Pix) = {testdiff.norm()} = 0 = {(test - test3).norm()} = norm(Pit Pit A Pi x - Pit A Pix); compare to norm(A Pi x) = {test2.norm()} ')
 #        #work.setRandom()
 #        work.set(1.)
 #        test2 = work.copy()
 #        self.proj3.project_transpose(test2)
 #        test2 = -1*test2
 #        test2 += work
-#    
+#
 #        test = work.copy()
 #        test = self.proj3.coarse_init(work)
 #        test3 = work.duplicate()
 #        self.proj3.A.mult(test,test3)
 #
-#        print(f'norm(A coarse_init(b)) = {test3.norm()} = {test2.norm()} = norm((I-Pit b)); norm diff = {(test2 - test3).norm()}')   
+#        print(f'norm(A coarse_init(b)) = {test3.norm()} = {test2.norm()} = norm((I-Pit b)); norm diff = {(test2 - test3).norm()}')
 #
 #        work.set(1.)
 #        test = work.copy()
 #        test2 = work.copy()
-#        self.proj3.project(test2)       
+#        self.proj3.project(test2)
 #        test3 = work.copy()
-#        self.proj3.project(test3)       
+#        self.proj3.project(test3)
 #        test = work.copy()
 #        self.Apos.mult(test2,test)
 #        test2 = work.copy()
@@ -749,7 +759,7 @@ class PCNew:
 #            print(f'norm(Pi3 AposinvV0[i]) = {test.norm()} compare to norm of the non projected vector norm ={(vec).norm()}')
 #
 ### END Debug DEBUG
- 
+
     def mult(self, x, y):
         """
         Applies the domain decomposition preconditioner followed by the projection preconditioner to a vector.
@@ -778,7 +788,7 @@ class PCNew:
             xd = x.copy()
             ytild = self.proj3.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
             if ytild.dot(xd) <  0:
-                print(f'x.dot(coarse_init(x)) = {ytild.dot(xd)} < 0 ') 
+                print(f'x.dot(coarse_init(x)) = {ytild.dot(xd)} < 0 ')
             y += ytild
 
     def MP_mult(self, x, y):
@@ -931,7 +941,7 @@ class projVposs_ctx(object):
         self.projVnegs = projVnegs
     def mult(self, mat, x, y):
         self.projVnegs(-x,y)
-        y.axpy(1.,x) 
+        y.axpy(1.,x)
 
 
 class H2_ctx(object):
@@ -945,7 +955,7 @@ class H2_ctx(object):
         self.works_2 = works_2
 
     def mult(self,mat,x,y):
-        self.apply([],x,y)     
+        self.apply([],x,y)
     def apply(self,pc, x, y):
         xd = x.copy()
         if self.projCS == True:
@@ -962,7 +972,7 @@ class H2_ctx(object):
         if self.addCS == True:
             xd = x.copy()
             ytild = self.proj2.coarse_init(xd) # I could save a coarse solve by combining this line with project_transpose
-            #print(f'in H2 x.dot(coarse_init(x)) = {ytild.dot(xd)} > 0 ') 
+            #print(f'in H2 x.dot(coarse_init(x)) = {ytild.dot(xd)} > 0 ')
             if ytild.dot(xd) < 0:
                 print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
             y += ytild
