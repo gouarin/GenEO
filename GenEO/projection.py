@@ -108,8 +108,10 @@ class GenEO_V0(object):
             If True, some information about the preconditioners is printed when the code is executed.
         """
         OptDB = PETSc.Options()
-        self.eigmax = OptDB.getReal('PCBNN_GenEO_eigmax', 10)
-        self.eigmin = OptDB.getReal('PCBNN_GenEO_eigmin', 0.1)
+        self.tau_eigmax = OptDB.getReal('PCBNN_GenEO_taueigmax', 0.1)
+        self.tau_eigmin = OptDB.getReal('PCBNN_GenEO_taueigmin', 0.1)
+        self.eigmax = OptDB.getReal('PCBNN_GenEO_eigmax', -1)
+        self.eigmin = OptDB.getReal('PCBNN_GenEO_eigmin', -1)
         self.nev = OptDB.getInt('PCBNN_GenEO_nev', 10)
         self.maxev = OptDB.getInt('PCBNN_GenEO_maxev', 2*self.nev)
         self.mumpsCntl3 = OptDB.getReal('PCBNN_mumpsCntl3', 1e-6)
@@ -134,22 +136,32 @@ class GenEO_V0(object):
         self.works = works
 
         #thresholds for the eigenvalue problems are computed from the user chosen targets for eigmin and eigmax
-        tau_eigmin = self.eigmin
-        #V0s = []
+        if self.eigmin > 0:
+          self.tau_eigmin = self.eigmin
+
         if self.eigmax > 0:
-            tau_eigmax = self.mult_max/self.eigmax
-        else:
-            tau_eigmax = 0
-        if self.Atildes != self.As:
-            self.solve_GenEO_eigmax(V0s, tau_eigmax)
-        else:
-            if self.verbose:
-                PETSc.Sys.Print('This is classical additive Schwarz so eigmax = {} (+1 if fully additive preconditioner), no eigenvalue problem will be solved for eigmax'.format(self.mult_max), comm=mpi.COMM_WORLD)
-        if self.Atildes != self.Ms:
-            self.solve_GenEO_eigmin(V0s, tau_eigmin)
+            self.tau_eigmax = self.mult_max/self.eigmax
+
+        if self.tau_eigmax > 0:
+            if self.Atildes != self.As:
+                self.solve_GenEO_eigmax(V0s, self.tau_eigmax)
+            else:
+                if self.verbose:
+                    PETSc.Sys.Print('This is classical additive Schwarz so eigmax = {} (+1 if fully additive preconditioner), no eigenvalue problem will be solved for eigmax'.format(self.mult_max), comm=mpi.COMM_WORLD)
         else:
             if self.verbose:
-                PETSc.Sys.Print('This is BNN so eigmin = 1, no eigenvalue problem will be solved for eigmin', comm=mpi.COMM_WORLD)
+                PETSc.Sys.Print('Skip GenEO for eigmax as user specified non positive eigmax and taueigmax', comm=mpi.COMM_WORLD)
+        if self.tau_eigmin > 0:
+            if self.Atildes != self.Ms:
+                self.solve_GenEO_eigmin(V0s, self.tau_eigmin)
+            else:
+                if self.verbose:
+                    PETSc.Sys.Print('This is BNN so eigmin = 1, no eigenvalue problem will be solved for eigmin', comm=mpi.COMM_WORLD)
+        else:
+            if self.verbose:
+                PETSc.Sys.Print('Skip GenEO for eigmin as user specified non positive eigmin and taueigmin', comm=mpi.COMM_WORLD)
+
+
         self.V0s = V0s
 
     def solve_GenEO_eigmax(self, V0s, tauGenEO_eigmax):

@@ -56,7 +56,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
             If True, the coarse projection is applied: Projected preconditioner of hybrid preconditioner depending on PCBNN_addCoarseSolve.
 
         PCBNN_addCoarseSolve : Bool
-            Default is False.
+            Default is True.
             If True then (R0t A0\R0 r) is added to the preconditioned residual.
             False corresponds to the projected preconditioner (need to choose initial guess accordingly) (or the one level preconditioner if PCBNN_CoarseProjection = False).
             True corresponds to the hybrid preconditioner (or the fully additive preconditioner if PCBNN_CoarseProjection = False).
@@ -66,7 +66,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         self.kscaling = OptDB.getBool('PCBNN_kscaling', True) #kscaling if true, multiplicity scaling if false
         self.verbose = OptDB.getBool('PCBNN_verbose', False)
         self.GenEO = OptDB.getBool('PCBNN_GenEO', True)
-        self.addCS = OptDB.getBool('PCBNN_addCoarseSolve', False)
+        self.addCS = OptDB.getBool('PCBNN_addCoarseSolve', True)
         self.projCS = OptDB.getBool('PCBNN_CoarseProjection', True)
 
         #extract Neumann matrix from A in IS format
@@ -228,13 +228,14 @@ class PCNew:
         self.switchtoASMpos = OptDB.getBool('PCNew_switchtoASMpos', False) #use Additive Schwarz as a preconditioner instead of BNN
         self.verbose = OptDB.getBool('PCNew_verbose', False)
         self.GenEO = OptDB.getBool('PCNew_GenEO', True)
-        self.H2addCS = OptDB.getBool('PCNew_H2addCoarseSolve', False)
+        #self.H2addCS = OptDB.getBool('PCNew_H2addCoarseSolve', True)
         self.H2projCS = OptDB.getBool('PCNew_H2CoarseProjection', True)
-        self.H3addCS = OptDB.getBool('PCNew_H3addCoarseSolve', False)
+        self.H3addCS = OptDB.getBool('PCNew_H3addCoarseSolve', True)
         self.H3projCS = OptDB.getBool('PCNew_H3CoarseProjection', True)
         self.compute_ritz_apos = OptDB.getBool('PCNew_ComputeRitzApos', False)
         self.nev = OptDB.getInt('PCNew_Bs_nev', 20) #number of vectors asked to SLEPc for cmputing negative part of Bs
 
+        self.H2addCS = True #OptDB.getBool('PCNew_H2addCoarseSolve', True)
         # Compute Bs (the symmetric matrix in the algebraic splitting of A)
         # TODO: implement without A in IS format
         ANeus = A_IS.getISLocalMat() #only the IS is used for the algorithm,
@@ -601,8 +602,6 @@ class PCNew:
         self.ksp_Apos.setType("cg")
         if self.compute_ritz_apos:
             self.ksp_Apos.setComputeEigenvalues(True)
-
-        self.ksp_Apos.setInitialGuessNonzero(True)
         self.pc_Apos = self.ksp_Apos.getPC()
         self.pc_Apos.setType('python')
         self.pc_Apos.setPythonContext(H2_ctx(self.H2projCS, self.H2addCS, self.proj2, self.scatter_l2g, self.ksp_Atildes, self.works_1, self.works_2 ))
@@ -624,8 +623,6 @@ class PCNew:
             self.works = vec.copy()
             self.work.set(0)
             self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
-            #TODO implement initializatio of coarse solve in case projected prec
-            self.work_2 = self.proj2.coarse_init(self.work)
             self.ksp_Apos.solve(self.work,self.work_2)
             if self.compute_ritz_apos and self.ritz_eigs_apos is None:
                 self.ritz_eigs_apos = self.ksp_Apos.computeEigenvalues()
@@ -639,7 +636,6 @@ class PCNew:
         self.AposinvV0 = AposinvV0
         self.proj3 = coarse_operators(self.AposinvV0,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
         self.proj = self.proj3 #this name is consistent with the proj in PCBNN
-
 ##Debug DEBUG
         works_3 = works.copy()
 ##projVnegs is a projection
