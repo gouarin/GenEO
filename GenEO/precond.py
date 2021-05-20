@@ -225,6 +225,7 @@ class PCNew:
     def __init__(self, A_IS):
         OptDB = PETSc.Options()
         self.switchtoASM = OptDB.getBool('PCNew_switchtoASM', False) #use Additive Schwarz as a preconditioner instead of BNN
+        self.switchtoASMpos = OptDB.getBool('PCNew_switchtoASMpos', False) #use Additive Schwarz as a preconditioner instead of BNN
         self.verbose = OptDB.getBool('PCNew_verbose', False)
         self.GenEO = OptDB.getBool('PCNew_GenEO', True)
         self.H2addCS = OptDB.getBool('PCNew_H2addCoarseSolve', False)
@@ -385,6 +386,7 @@ class PCNew:
         Vneg = []
         Dneg = []
         RsDVnegs = []
+        RsDnegs = []
         for i in range(mpi.COMM_WORLD.size):
             nnegi = len(Vnegs) if i == mpi.COMM_WORLD.rank else None
             nnegi = mpi.COMM_WORLD.bcast(nnegi, root=i)
@@ -402,6 +404,7 @@ class PCNew:
             if works.norm() != 0:
                 RsVnegs.append(works.copy())
                 RsDVnegs.append(Dneg[i]*works.copy())
+                RsDnegs.append(Dneg[i])
             #TO DO: here implement RsVnegs and RsDVnegs
         #self.Vneg = Vneg
 
@@ -480,7 +483,7 @@ class PCNew:
         if self.switchtoASM:
             Atildes = As
             if mpi.COMM_WORLD.rank == 0:
-                print('The user has chosen to switch to Additive Schwarz instead of BNN.')
+                print('Switch to Additive Schwarz instead of BNN.')
             ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
             ksp_Atildes.setOptionsPrefix("ksp_Atildes_")
             ksp_Atildes.setOperators(Atildes)
@@ -500,6 +503,34 @@ class PCNew:
             pc_Atildes_forSLEPc.setType('cholesky')
             pc_Atildes_forSLEPc.setFactorSolverType('mumps')
             ksp_Atildes_forSLEPc.setFromOptions()
+            if self.switchtoASMpos:
+                if mpi.COMM_WORLD.rank == 0:
+                    print('switchtoASM pos has been ignored in favour of switchtoASM.')
+        elif self.switchtoASMpos:
+            Atildes = RsAposRsts
+            if mpi.COMM_WORLD.rank == 0:
+                print('Switch to Apos Additive Schwarz instead of BNN.')
+            ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+            ksp_Atildes.setOptionsPrefix("ksp_Atildes_")
+            ksp_Atildes.setOperators(Atildes)
+            ksp_Atildes.setType('preonly')
+            pc_Atildes = ksp_Atildes.getPC()
+            pc_Atildes.setType('python')
+            pc_Atildes.setPythonContext(invRsAposRsts_ctx(As,RsVnegs,RsDnegs,works))
+            ksp_Atildes.setFromOptions()
+            minV0s = minimal_V0(ksp_Atildes,invmusVnegs).V0s
+
+            #once a ksp has been passed to SLEPs it cannot be used again so we use a second, identical, ksp for SLEPc as a temporary fix
+            ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+            ksp_Atildes_forSLEPc.setOptionsPrefix("ksp_Atildes_")
+            ksp_Atildes_forSLEPc.setOperators(Atildes)
+            ksp_Atildes_forSLEPc.setType('preonly')
+            pc_Atildes_forSLEPc = ksp_Atildes_forSLEPc.getPC()
+            pc_Atildes_forSLEPc.setType('python')
+            pc_Atildes_forSLEPc.setPythonContext(invRsAposRsts_ctx(As,RsVnegs,RsDnegs,works))
+            ksp_Atildes_forSLEPc.setFromOptions()
+
+
         else: #(default)
             Atildes = Ms
             ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -588,7 +619,7 @@ class PCNew:
             for j in range(nnegi):
                 Vneg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
         AposinvV0 = []
-        self.ritz_eigs_apos = None
+        self.ritz_eig_apos = None
         for vec in Vneg:
             self.works = vec.copy()
             self.work.set(0)
@@ -887,6 +918,58 @@ class RsAposRsts_ctx(object):
         self.As.mult(x,y)
         for i,vec in enumerate(self.RsVnegs):
             y.axpy(x.dot(self.RsDVnegs[i]), vec)
+
+class invRsAposRsts_ctx(object):
+    def __init__(self,As,RsVnegs,RsDnegs,works):
+        self.As = As
+        self.works = works
+        self.RsVnegs = RsVnegs
+        self.RsDnegs = RsDnegs
+
+        self.ksp_As = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+        self.ksp_As.setOptionsPrefix("ksp_As_")
+        self.ksp_As.setOperators(self.As)
+        self.ksp_As.setType('preonly')
+        self.pc_As = self.ksp_As.getPC()
+        self.pc_As.setType('cholesky')
+        self.pc_As.setFactorSolverType('mumps')
+        self.ksp_As.setFromOptions()
+        self.AsinvRsVnegs = []
+        for i,vec in enumerate(self.RsVnegs):
+            self.ksp_As.solve(vec,self.works)
+            self.AsinvRsVnegs.append(self.works.copy())
+        self.Matwood = PETSc.Mat().create(comm=PETSc.COMM_SELF)
+        self.Matwood.setType(PETSc.Mat.Type.SEQDENSE)
+        self.Matwood.setSizes([len(self.AsinvRsVnegs),len(self.AsinvRsVnegs)])
+        self.Matwood.setOption(PETSc.Mat.Option.SYMMETRIC, True)
+        self.Matwood.setPreallocationDense(None)
+        for i, vec in enumerate(self.AsinvRsVnegs):
+            for j in range(i):
+                tmp = self.RsVnegs[j].dot(vec)
+                self.Matwood[i, j] = tmp
+                self.Matwood[j, i] = tmp
+            tmp = self.RsVnegs[i].dot(vec)
+            self.Matwood[i, i] = tmp + 1/self.RsDnegs[i]
+        self.Matwood.assemble()
+        self.ksp_Matwood = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+        self.ksp_Matwood.setOperators(self.Matwood)
+        self.ksp_Matwood.setType('preonly')
+        self.pc = self.ksp_Matwood.getPC()
+        self.pc.setType('cholesky')
+        self.gamma, _ = self.Matwood.getVecs()  
+        self.alpha = self.gamma.duplicate()
+        
+    def mult(self, mat, x, y):
+        self.ksp_As.solve(x,y)
+        for i, vec in enumerate(self.AsinvRsVnegs):
+            self.gamma[i] = vec.dot(x)
+        self.ksp_Matwood.solve(self.gamma, self.alpha)
+        for i, vec in enumerate(self.AsinvRsVnegs):
+            y.axpy(-self.alpha[i], vec)
+
+    def apply(self,pc, x, y):
+        self.mult(pc,x,y)
+
 
 class Aposs_ctx(object):
     def __init__(self,Bs, Anegs):

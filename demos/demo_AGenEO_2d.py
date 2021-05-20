@@ -26,6 +26,7 @@ E2 = OptDB.getReal('E2', 10**6)
 nu1 = OptDB.getReal('nu1', 0.4)
 nu2 = OptDB.getReal('nu2', 0.4)
 test_case = OptDB.getString('test_case', 'default')
+isPCNew = OptDB.getBool('PCNew', True)
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
@@ -92,27 +93,30 @@ A.assemble()
 bcApplyWest(da, A, b)
 
 #Setup the preconditioner (or multipreconditioner) and the coarse space
-#pcbnn = PCBNN(A)
-pcbnn = PCNew(A)
+if isPCNew:
+    pcbnn = PCNew(A)
+else:
+    pcbnn = PCBNN(A)
 
-Apos = pcbnn.Apos
-############compute x FOR INITIALIZATION OF PCG
-# Random initial guess
-print('Random rhs')
-b.setRandom()
-
-x.setRandom()
-
-xnorm = b.dot(x)/x.dot(Apos*x)
-x *= xnorm
-
+#Apos = pcbnn.Apos
+#############compute x FOR INITIALIZATION OF PCG
+## Random initial guess
+#print('Random rhs')
+#b.setRandom()
+#
+#x.setRandom()
+#
+#xnorm = b.dot(x)/x.dot(Apos*x)
+#x *= xnorm
+#
 #Pre-compute solution in coarse space
 #Required for PPCG (projected preconditioner)
 #Doesn't hurt or help the hybrid and additive preconditioners
 #the initial guess is passed to the PCG below with the option ksp.setInitialGuessNonzero(True)
 
 
-#print('solve a problem for Apos preconditioned by H2')
+#if mpi.COMM_WORLD.rank == 0:
+#    print('solve a problem for Apos preconditioned by H2')
 #pcbnn.proj2.project(x)
 #xtild = pcbnn.proj2.coarse_init(b)
 #tmp = xtild.norm()
@@ -153,7 +157,8 @@ x *= xnorm
 #print(f'norm of Apos x - b = {(Aposx - b).norm()}, norm of b = {b.norm()}')
 #exit()
 ##############compute x FOR INITIALIZATION OF PCG
-print('Solve a problem with A and H3')
+#if mpi.COMM_WORLD.rank == 0:
+    print('Solve a problem with A and H3')
 # Random initial guess
 #print('Random rhs')
 #b.setRandom()
@@ -202,30 +207,47 @@ ksp.setFromOptions()
 ###### SOLVE:
 ksp.solve(b, x)
 
-eigs = ksp.computeEigenvalues()
+eig = ksp.computeEigenvalues()
+convhistory = ksp.getConvergenceHistory()
 
-print(eigs)
-
-print('convergence history', ksp.getConvergenceHistory())
-
-if mpi.COMM_WORLD.rank == 0:
-    np.savez(test_case,
-             convergence=np.asarray(ksp.getConvergenceHistory()[:]),
-             eigs=np.asarray(eigs[:]),
-             eigs_Apos=pcbnn.ritz_eigs_apos,
-    )
-np.savez(f'{test_case}_{mpi.COMM_WORLD.rank}',
-         nnegs=pcbnn.nnegs,
-
-)
 
 if ksp.getInitialGuessNonzero() == False:
     x+=xtild
 
 Ax = x.duplicate()
 pcbnn.A.mult(x,Ax)
-print(f'norm of A x - b = {(Ax - b).norm()}, norm of b = {b.norm()}')
+tmp1 = (Ax - b).norm()
+tmp2 = b.norm()
+if mpi.COMM_WORLD.rank == 0:
+    print(f'norm of A x - b = {tmp1}, norm of b = {tmp2}')
+    print(eig)
+    print('convergence history', convhistory)
 
+#if mpi.COMM_WORLD.rank == 0:
+#    np.savez(test_case,
+#             convergence=np.asarray(ksp.getConvergenceHistory()[:]),
+#             eig=np.asarray(eig[:]),
+#             eig_Apos=pcbnn.ritz_eig_apos,
+#    )
+#np.savez(f'{test_case}_{mpi.COMM_WORLD.rank}',
+#         nnegs=pcbnn.nnegs,
+#
+#)
 
-viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
-x.view(viewer)
+#if mpi.COMM_WORLD.rank == 0:
+#    print('compare with MUMPS global solution')
+#
+#ksp_Amumps = PETSc.KSP().create(comm=PETSc.COMM_SELF)
+#ksp_Amumps.setOptionsPrefix("ksp_Amumps_")
+#ksp_Amumps.setOperators(A)
+#ksp_Amumps.setType('preonly')
+#pc_Amumps = ksp_Amumps.getPC()
+#pc_Amumps.setType('cholesky')
+#pc_Amumps.setFactorSolverType('mumps')
+#ksp_Amumps.setFromOptions()
+#
+#ksp_Amumps.solve(b,x)
+#if mpi.COMM_WORLD.rank == 0:
+#    print('finished comuting MUMPS global solution')
+#viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
+#x.view(viewer)
