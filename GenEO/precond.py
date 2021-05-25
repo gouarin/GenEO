@@ -93,7 +93,13 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         scatter_l2g(vlocal, vglobal, PETSc.InsertMode.ADD_VALUES)
         scatter_l2g(vglobal, vlocal, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         NULL,mult_max = vglobal.max()
-
+        if self.viewPC: 
+            _, self.ns = vlocal.getSizes()
+            _, self.nglob = vglobal.getSizes()
+            tempglobal = vglobal.getArray(readonly=True)
+            templocal = vlocal.getArray(readonly=True)
+            self.nints = np.count_nonzero(tempglobal == 1) #interor dofs in this subdomain
+            self.nGammas = np.count_nonzero(templocal -1) #interor dofs in this subdomain
         # k-scaling or multiplicity scaling of the local (non-assembled) matrix
         if self.kscaling == False:
             Ms.diagonalScale(vlocal,vlocal)
@@ -151,8 +157,6 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         self.proj = coarse_operators(self.V0s,self.A,self.scatter_l2g,vlocal,self.work)
         if self.viewV0 == True:
             self.proj.view()
-
-        #self.proj = projection(self)
 
         if self.viewPC == True:
             self.view()            
@@ -233,6 +237,9 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         """
         self.mult(x,y)
     def view(self):
+        self.gathered_ns = mpi.COMM_WORLD.gather(self.ns, root=0)
+        self.gathered_nints = mpi.COMM_WORLD.gather(self.nints, root=0)
+        self.gathered_Gammas =  mpi.COMM_WORLD.gather(self.nGammas, root=0)
         self.minV0.gathered_dim = mpi.COMM_WORLD.gather(self.minV0.nrb, root=0)
         if self.GenEO == True:
             self.GenEOV0.gathered_nsharp = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmax, root=0)
@@ -253,6 +260,17 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
             print(f'{self.viewV0= }')
             print(f'{self.viewGenEOV0= }')
             print(f'{self.viewminV0= }')
+            print(f'{self.mult_max=}') 
+            print(f'### info about the subdomains ###')
+            self.nint = np.sum(self.gathered_nints)
+            self.nGamma = self.nglob - self.nint 
+            print(f'{self.gathered_ns =}')
+            print(f'{self.gathered_nints =}')
+            print(f'{self.gathered_Gammas=}')
+            print(f'{self.nGamma=}')
+            print(f'{self.nint=}')
+            print(f'{self.nglob=}')
+
             print(f'### info about minV0.V0s = (Ker(Atildes)) ###')
             print(f'{self.minV0.mumpsCntl3=}') 
             if (self.ksp_Atildes.pc.getFactorSolverType() == 'mumps'):
@@ -269,7 +287,6 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
                 print(f'{self.GenEOV0.maxev=}') 
                 print(f'{self.GenEOV0.mumpsCntl3=}') 
                 print(f'{self.GenEOV0.verbose=}') 
-                print(f'{self.GenEOV0.mult_max=}') 
                 print(f'{self.GenEOV0.gathered_nsharp=}')
                 print(f'{self.GenEOV0.gathered_nflat=}') 
                 print(f'{self.GenEOV0.gathered_dimKerMs=}')
@@ -373,6 +390,14 @@ class PCNew:
         NULL,mult_max = work.max()
 
         scatter_l2g(work, mus, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+        if self.viewPC: 
+            _, self.ns = mus.getSizes()
+            _, self.nglob = work.getSizes()
+            tempglobal = work.getArray(readonly=True)
+            templocal = mus.getArray(readonly=True)
+            self.nints = np.count_nonzero(tempglobal == 1) #interor dofs in this subdomain
+            self.nGammas = np.count_nonzero(templocal -1) #interor dofs in this subdomain
+
         invmus = mus.duplicate()
         invmus = 1/mus
         if mpi.COMM_WORLD.rank == 0:
@@ -954,6 +979,9 @@ class PCNew:
         self.mult(x,y)
 
     def view(self):
+        self.gathered_ns = mpi.COMM_WORLD.gather(self.ns, root=0)
+        self.gathered_nints = mpi.COMM_WORLD.gather(self.nints, root=0)
+        self.gathered_Gammas =  mpi.COMM_WORLD.gather(self.nGammas, root=0)
         self.minV0.gathered_dim = mpi.COMM_WORLD.gather(self.minV0.nrb, root=0)
         self.gathered_nneg = mpi.COMM_WORLD.gather(self.nnegs, root=0)
         self.gathered_Dneg = mpi.COMM_WORLD.gather(self.Dnegs, root=0)
@@ -978,6 +1006,16 @@ class PCNew:
             print(f'{self.viewnegV0= }')
             print(f'{self.viewminV0= }')
             print(f'{self.compute_ritz_apos=}') 
+            print(f'{self.mult_max=}') 
+            print(f'### info about the subdomains ###')
+            self.nint = np.sum(self.gathered_nints)
+            self.nGamma = self.nglob - self.nint 
+            print(f'{self.gathered_ns =}')
+            print(f'{self.gathered_nints =}')
+            print(f'{self.gathered_Gammas=}')
+            print(f'{self.nGamma=}')
+            print(f'{self.nint=}')
+            print(f'{self.nglob=}')
             print(f'### info about minV0.V0s = (Ker(Atildes)) ###')
             print(f'{self.minV0.mumpsCntl3=}') 
             print(f'###info about Vnegs = rank(Anegs) = coarse components for proj3')
@@ -997,7 +1035,6 @@ class PCNew:
                 print(f'{self.GenEOV0.maxev=}') 
                 print(f'{self.GenEOV0.mumpsCntl3=}') 
                 print(f'{self.GenEOV0.verbose=}') 
-                print(f'{self.GenEOV0.mult_max=}') 
                 print(f'{self.GenEOV0.gathered_nsharp=}')
                 print(f'{self.GenEOV0.gathered_nflat=}') 
                 #print(f'{self.GenEOV0.gathered_dimKerMs=}')

@@ -195,6 +195,6 @@ if mpi.COMM_WORLD.rank == 0:
 #
 #ksp_Amumps.solve(b,x)
 #if mpi.COMM_WORLD.rank == 0:
-#    print('finished comuting MUMPS global solution')
+#    print('finished computing MUMPS global solution')
 #viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
 #x.view(viewer)
