@@ -68,6 +68,10 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         self.GenEO = OptDB.getBool('PCBNN_GenEO', True)
         self.addCS = OptDB.getBool('PCBNN_addCoarseSolve', True)
         self.projCS = OptDB.getBool('PCBNN_CoarseProjection', True)
+        self.viewPC = OptDB.getBool('PCBNN_view', True)
+        self.viewV0 = OptDB.getBool('PCBNN_viewV0', False)
+        self.viewGenEOV0 = OptDB.getBool('PCBNN_viewGenEO', False)
+        self.viewminV0 = OptDB.getBool('PCBNN_viewminV0', False)
 
         #extract Neumann matrix from A in IS format
         Ms = A_IS.copy().getISLocalMat()
@@ -135,15 +139,23 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         self.mult_max = mult_max
 
         self.minV0 = minimal_V0(self.ksp_Atildes)
+        if self.viewminV0 == True:
+            self.minV0.view()
         if self.GenEO == True:
-          GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,self.minV0.V0s)
-          self.V0s = GenEOV0.V0s
+            self.GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,self.minV0.V0s)
+            self.V0s = self.GenEOV0.V0s
+            if self.viewGenEOV0 == True:
+                self.GenEOV0.view()
         else:
-          self.V0s = self.minV0.V0s
+            self.V0s = self.minV0.V0s
         self.proj = coarse_operators(self.V0s,self.A,self.scatter_l2g,vlocal,self.work)
+        if self.viewV0 == True:
+            self.proj.view()
 
         #self.proj = projection(self)
 
+        if self.viewPC == True:
+            self.view()            
     def mult(self, x, y):
         """
         Applies the domain decomposition preconditioner followed by the projection preconditioner to a vector.
@@ -220,6 +232,58 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
 
         """
         self.mult(x,y)
+    def view(self):
+        self.minV0.gathered_dim = mpi.COMM_WORLD.gather(self.minV0.nrb, root=0)
+        if self.GenEO == True:
+            self.GenEOV0.gathered_nsharp = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmax, root=0)
+            self.GenEOV0.gathered_nflat = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmin, root=0)
+            self.GenEOV0.gathered_dimKerMs = mpi.COMM_WORLD.gather(self.GenEOV0.dimKerMs, root=0)
+            self.GenEOV0.gathered_Lambdasharp = mpi.COMM_WORLD.gather(self.GenEOV0.Lambda_GenEO_eigmax, root=0)
+            self.GenEOV0.gathered_Lambdaflat = mpi.COMM_WORLD.gather(self.GenEOV0.Lambda_GenEO_eigmin, root=0)
+        if mpi.COMM_WORLD.rank == 0:
+            print('#############################')
+            print(f'view of PCBNN')
+            print(f'{self.switchtoASM=}')
+            print(f'{self.kscaling= }')
+            print(f'{self.verbose= }')
+            print(f'{self.GenEO= }')
+            print(f'{self.addCS= }')
+            print(f'{self.projCS= }')
+            print(f'{self.viewPC= }')
+            print(f'{self.viewV0= }')
+            print(f'{self.viewGenEOV0= }')
+            print(f'{self.viewminV0= }')
+            print(f'### info about minV0.V0s = (Ker(Atildes)) ###')
+            print(f'{self.minV0.mumpsCntl3=}') 
+            if (self.ksp_Atildes.pc.getFactorSolverType() == 'mumps'):
+                print(f'dim(Ker(Atildes)) = {self.minV0.gathered_dim}')
+            else:
+                print(f'Ker(Atildes) not computed because pc is not mumps')
+            if self.GenEO == True:
+                print(f'### info about GenEOV0.V0s = (Ker(Atildes)) ###')
+                print(f'{self.GenEOV0.tau_eigmax=}') 
+                print(f'{self.GenEOV0.tau_eigmin=}') 
+                print(f'{self.GenEOV0.eigmax=}') 
+                print(f'{self.GenEOV0.eigmin=}') 
+                print(f'{self.GenEOV0.nev=}') 
+                print(f'{self.GenEOV0.maxev=}') 
+                print(f'{self.GenEOV0.mumpsCntl3=}') 
+                print(f'{self.GenEOV0.verbose=}') 
+                print(f'{self.GenEOV0.mult_max=}') 
+                print(f'{self.GenEOV0.gathered_nsharp=}')
+                print(f'{self.GenEOV0.gathered_nflat=}') 
+                print(f'{self.GenEOV0.gathered_dimKerMs=}')
+                #print(f'{np.array(self.GenEOV0.gathered_Lambdasharp)=}')
+                #print(f'{np.array(self.GenEOV0.gathered_Lambdaflat)=}')
+            print(f'### info about the coarse space ###')
+            print(f'{self.proj.V0_is_global=}') 
+            print(f'{self.proj.gathered_dimV0s=}') 
+            if self.GenEO == True:
+                print(f'global dim V0 = {np.sum(self.proj.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes)) + ({np.sum(self.GenEOV0.gathered_nsharp)} from GenEO_eigmax) + ({np.sum(self.GenEOV0.gathered_nflat)+np.sum(self.GenEOV0.gathered_dimKerMs)} from GenEO_eigmin)') 
+            else:
+                print(f'global dim V0 = {np.sum(self.proj.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes))') 
+
+            print('#############################')
 
 class PCNew:
     def __init__(self, A_IS):
@@ -235,7 +299,13 @@ class PCNew:
         self.compute_ritz_apos = OptDB.getBool('PCNew_ComputeRitzApos', False)
         self.nev = OptDB.getInt('PCNew_Bs_nev', 20) #number of vectors asked to SLEPc for cmputing negative part of Bs
 
-        self.H2addCS = True #OptDB.getBool('PCNew_H2addCoarseSolve', True)
+        self.viewPC = OptDB.getBool('PCNew_view', True)
+        self.viewV0 = OptDB.getBool('PCNew_viewV0', False)
+        self.viewGenEOV0 = OptDB.getBool('PCNew_viewGenEO', False)
+        self.viewminV0 = OptDB.getBool('PCNew_viewminV0', False)
+        self.viewnegV0 = OptDB.getBool('PCNew_viewnegV0', False)
+
+        self.H2addCS = True #OptDB.getBool('PCNew_H2addCoarseSolve', True) (it is currently not an option to use a projected preconditioner for H2)
         # Compute Bs (the symmetric matrix in the algebraic splitting of A)
         # TODO: implement without A in IS format
         ANeus = A_IS.getISLocalMat() #only the IS is used for the algorithm,
@@ -375,13 +445,20 @@ class PCNew:
                 invmusVnegs.append(invmus * Vnegs[-1])
             else :
                 Dposs.append(tempscalar)
-        PETSc.Sys.Print('for Bs in subdomain {}: ncv= {} with {} negative eigs'.format(mpi.COMM_WORLD.rank, eps.getConverged(), len(Vnegs), self.nev), comm=PETSc.COMM_SELF)
-        #PETSc.Sys.Print('for Bs in subdomain {}, eigenvalues: {} {}'.format(mpi.COMM_WORLD.rank, Dnegs, Dposs), comm=PETSc.COMM_SELF)
+        if self.verbose: 
+            PETSc.Sys.Print('for Bs in subdomain {}: ncv= {} with {} negative eigs'.format(mpi.COMM_WORLD.rank, eps.getConverged(), len(Vnegs), self.nev), comm=PETSc.COMM_SELF)
+            print(f'values of Dnegs {np.array(Dnegs)}')
         nnegs = len(Dnegs)
         #print(f'length of Dnegs {nnegs}')
-        print(f'values of Dnegs {np.array(Dnegs)}')
-
         #END diagonalize Bs
+
+        if self.viewnegV0: 
+            print('###')
+            print(f'view of Vneg in Subdomain {mpi.COMM_WORLD.rank}')
+            print(f'ncv = {eps.getConverged()} eigenvalues converged')
+            print(f'{nnegs=}') 
+            print(f'values of Dnegs: {np.array(Dnegs)}')
+
         works.set(0.)
         RsVnegs = []
         Vneg = []
@@ -493,7 +570,10 @@ class PCNew:
             pc_Atildes.setType('cholesky')
             pc_Atildes.setFactorSolverType('mumps')
             ksp_Atildes.setFromOptions()
-            minV0s = minimal_V0(ksp_Atildes,invmusVnegs).V0s
+            minV0 = minimal_V0(ksp_Atildes,invmusVnegs)
+            minV0s = minV0.V0s
+            if self.viewminV0 == True:
+                self.minV0.view()
 
             #once a ksp has been passed to SLEPs it cannot be used again so we use a second, identical, ksp for SLEPc as a temporary fix
             ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -506,7 +586,7 @@ class PCNew:
             ksp_Atildes_forSLEPc.setFromOptions()
             if self.switchtoASMpos:
                 if mpi.COMM_WORLD.rank == 0:
-                    print('switchtoASM pos has been ignored in favour of switchtoASM.')
+                    print('switchtoASMpos has been ignored in favour of switchtoASM.')
         elif self.switchtoASMpos:
             Atildes = RsAposRsts
             if mpi.COMM_WORLD.rank == 0:
@@ -519,7 +599,10 @@ class PCNew:
             pc_Atildes.setType('python')
             pc_Atildes.setPythonContext(invRsAposRsts_ctx(As,RsVnegs,RsDnegs,works))
             ksp_Atildes.setFromOptions()
-            minV0s = minimal_V0(ksp_Atildes,invmusVnegs).V0s
+            minV0 = minimal_V0(ksp_Atildes,invmusVnegs)
+            minV0s = minV0.V0s
+            if self.viewminV0 == True:
+                self.minV0.view()
 
             #once a ksp has been passed to SLEPs it cannot be used again so we use a second, identical, ksp for SLEPc as a temporary fix
             ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -530,8 +613,6 @@ class PCNew:
             pc_Atildes_forSLEPc.setType('python')
             pc_Atildes_forSLEPc.setPythonContext(invRsAposRsts_ctx(As,RsVnegs,RsDnegs,works))
             ksp_Atildes_forSLEPc.setFromOptions()
-
-
         else: #(default)
             Atildes = Ms
             ksp_Atildes = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -542,7 +623,11 @@ class PCNew:
             pc_Atildes.setType('python')
             pc_Atildes.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
             ksp_Atildes.setFromOptions()
-            minV0s = invmusVnegs
+            minV0 = minimal_V0(ksp_Atildes,invmusVnegs) #won't compute anything more vecause the solver for Atildes is not mumps
+            minV0s = minV0.V0s
+            if self.viewminV0 == True:
+                self.minV0.view()
+
 
             #once a ksp has been passed to SLEPs it cannot be used again so we use a second, identical, ksp for SLEPc as a temporary fix
             ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -570,19 +655,24 @@ class PCNew:
         self.scatter_l2g = scatter_l2g
         self.mult_max = mult_max
         self.ksp_Atildes = ksp_Atildes
+        self.minV0 = minV0
+        self.Dnegs = Dnegs
         self.nnegs = nnegs
 
         self.works_1.set(1.)
         self.RsAposRsts.mult(self.works_1,self.works_2)
 
         if self.GenEO == True:
-          #GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,minV0s,self.ksp_Ms_forSLEPc)
-          GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.RsAposRsts,self.mult_max,minV0s,self.ksp_Ms_forSLEPc)
-          self.V0s = GenEOV0.V0s
+          self.GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.RsAposRsts,self.mult_max,minV0s,self.ksp_Ms_forSLEPc)
+          self.V0s = self.GenEOV0.V0s
+          if self.viewGenEOV0 == True:
+              self.GenEOV0.view()
         else:
           self.V0s = minV0s
 
         self.proj2 = coarse_operators(self.V0s,self.Apos,self.scatter_l2g,self.works_1,self.work)
+        if self.viewV0 == True:
+            self.proj2.view()
 #        work.set(1.)
 #        test = work.copy()
 #        test = self.proj2.coarse_init(work)
@@ -608,8 +698,9 @@ class PCNew:
         self.ksp_Apos.setFromOptions()
         self.pc_Apos.setFromOptions()
         #At this point the preconditioner for Apos is ready
-        if mpi.COMM_WORLD.rank == 0:
-            print(f'#V0(H2) = rank(Ker(Pi2)) = {len(self.proj2.V0)}')
+        if self.verbose: 
+            if mpi.COMM_WORLD.rank == 0:
+                print(f'#V0(H2) = rank(Ker(Pi2)) = {len(self.proj2.V0)}')
         works.set(0.)
         Vneg = []
         for i in range(mpi.COMM_WORLD.size):
@@ -618,13 +709,13 @@ class PCNew:
             for j in range(nnegi):
                 Vneg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
         AposinvV0 = []
-        self.ritz_eig_apos = None
+        self.ritz_eigs_apos = [] 
         for vec in Vneg:
             self.works = vec.copy()
             self.work.set(0)
             self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
             self.ksp_Apos.solve(self.work,self.work_2)
-            if self.compute_ritz_apos and self.ritz_eigs_apos is None:
+            if self.compute_ritz_apos and self.ritz_eigs_apos == []:
                 self.ritz_eigs_apos = self.ksp_Apos.computeEigenvalues()
                 self.ksp_Apos.setComputeEigenvalues(False)
 
@@ -636,8 +727,16 @@ class PCNew:
         self.AposinvV0 = AposinvV0
         self.proj3 = coarse_operators(self.AposinvV0,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
         self.proj = self.proj3 #this name is consistent with the proj in PCBNN
+
+        if self.viewV0 == True:
+            self.proj.view()
+
+        if self.viewPC == True:
+            self.view()            
+
+
 ##Debug DEBUG
-        works_3 = works.copy()
+#        works_3 = works.copy()
 ##projVnegs is a projection
 #        #works.setRandom()
 #        works.set(1.)
@@ -853,6 +952,69 @@ class PCNew:
 
         """
         self.mult(x,y)
+
+    def view(self):
+        self.minV0.gathered_dim = mpi.COMM_WORLD.gather(self.minV0.nrb, root=0)
+        self.gathered_nneg = mpi.COMM_WORLD.gather(self.nnegs, root=0)
+        self.gathered_Dneg = mpi.COMM_WORLD.gather(self.Dnegs, root=0)
+        if self.GenEO == True:
+            self.GenEOV0.gathered_nsharp = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmax, root=0)
+            self.GenEOV0.gathered_nflat = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmin, root=0)
+            #self.GenEOV0.gathered_dimKerMs = mpi.COMM_WORLD.gather(self.GenEOV0.dimKerMs, root=0)
+            self.GenEOV0.gathered_Lambdasharp = mpi.COMM_WORLD.gather(self.GenEOV0.Lambda_GenEO_eigmax, root=0)
+            self.GenEOV0.gathered_Lambdaflat = mpi.COMM_WORLD.gather(self.GenEOV0.Lambda_GenEO_eigmin, root=0)
+        if mpi.COMM_WORLD.rank == 0:
+            print('#############################')
+            print(f'view of PCNew')
+            print(f'{self.switchtoASM=}')
+            print(f'{self.verbose= }')
+            print(f'{self.GenEO= }')
+            print(f'{self.H3addCS= }')
+            print(f'{self.H3projCS= }')
+            print(f'{self.H2projCS= }')
+            print(f'{self.viewPC= }')
+            print(f'{self.viewV0= }')
+            print(f'{self.viewGenEOV0= }')
+            print(f'{self.viewnegV0= }')
+            print(f'{self.viewminV0= }')
+            print(f'{self.compute_ritz_apos=}') 
+            print(f'### info about minV0.V0s = (Ker(Atildes)) ###')
+            print(f'{self.minV0.mumpsCntl3=}') 
+            print(f'###info about Vnegs = rank(Anegs) = coarse components for proj3')
+            print(f'{self.gathered_nneg=}')
+            print(f'{np.sum(self.gathered_nneg)=}')
+            if (self.ksp_Atildes.pc.getFactorSolverType() == 'mumps'):
+                print(f'dim(Ker(Atildes)) = {self.minV0.gathered_dim}')
+            else:
+                print(f'Ker(Atildes) not computed because pc is not mumps')
+            if self.GenEO == True:
+                print(f'### info about GenEOV0.V0s = (Ker(Atildes)) ###')
+                print(f'{self.GenEOV0.tau_eigmax=}') 
+                print(f'{self.GenEOV0.tau_eigmin=}') 
+                print(f'{self.GenEOV0.eigmax=}') 
+                print(f'{self.GenEOV0.eigmin=}') 
+                print(f'{self.GenEOV0.nev=}') 
+                print(f'{self.GenEOV0.maxev=}') 
+                print(f'{self.GenEOV0.mumpsCntl3=}') 
+                print(f'{self.GenEOV0.verbose=}') 
+                print(f'{self.GenEOV0.mult_max=}') 
+                print(f'{self.GenEOV0.gathered_nsharp=}')
+                print(f'{self.GenEOV0.gathered_nflat=}') 
+                #print(f'{self.GenEOV0.gathered_dimKerMs=}')
+                #print(f'{np.array(self.GenEOV0.gathered_Lambdasharp)=}')
+                #print(f'{np.array(self.GenEOV0.gathered_Lambdaflat)=}')
+            print(f'### info about the preconditioner for Apos ###')
+            print(f'{self.proj2.V0_is_global=}') 
+            if(self.proj2.V0_is_global == False):
+                print(f'{self.proj2.gathered_dimV0s=}') 
+            if self.GenEO == True:
+                print(f'global dim V0 for Apos = {self.proj2.dim} = ({np.sum(self.gathered_nneg)} from Vneg ) + ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes)) + ({np.sum(self.GenEOV0.gathered_nsharp)} from GenEO_eigmax) + ({np.sum(self.GenEOV0.gathered_nflat) } from GenEO_eigmin)') 
+            else:
+                print(f'global dim V0 for Apos = {np.sum(self.proj2.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes))') 
+            if self.compute_ritz_apos and self.ritz_eigs_apos != []:
+                print(f'Estimated kappa(H2 Apos) = {self.ritz_eigs_apos.max()/self.ritz_eigs_apos.min() }; with lambdamin = {self.ritz_eigs_apos.min()} and   lambdamax = {self.ritz_eigs_apos.max()}')   
+
+            print('#############################')
 
 class Aneg_ctx(object):
     def __init__(self, Vnegs, DVnegs, scatter_l2g, works, works_2):

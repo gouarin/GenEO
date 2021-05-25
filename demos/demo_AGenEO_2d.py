@@ -27,6 +27,7 @@ nu1 = OptDB.getReal('nu1', 0.4)
 nu2 = OptDB.getReal('nu2', 0.4)
 test_case = OptDB.getString('test_case', 'default')
 isPCNew = OptDB.getBool('PCNew', True)
+computeRitz  =  OptDB.getBool('computeRitz', True)
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
@@ -134,7 +135,8 @@ pc.setPythonContext(pcbnn)
 pc.setFromOptions()
 
 ksp.setType("cg")
-ksp.setComputeEigenvalues(True)
+if computeRitz:
+    ksp.setComputeEigenvalues(True)
 #ksp.setType(ksp.Type.PYTHON)
 #pyKSP = KSP_PCG()
 #ksp.setPythonContext(pyKSP)
@@ -149,7 +151,10 @@ ksp.setFromOptions()
 ###### SOLVE:
 ksp.solve(b, x)
 
-eig = ksp.computeEigenvalues()
+if computeRitz:
+    Ritz = ksp.computeEigenvalues()
+    Ritzmin = Ritz.min()
+    Ritzmax = Ritz.max()
 convhistory = ksp.getConvergenceHistory()
 
 
@@ -162,8 +167,8 @@ tmp1 = (Ax - b).norm()
 tmp2 = b.norm()
 if mpi.COMM_WORLD.rank == 0:
     print(f'norm of A x - b = {tmp1}, norm of b = {tmp2}')
-    print(eig)
     print('convergence history', convhistory)
+    print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')  
 
 #if mpi.COMM_WORLD.rank == 0:
 #    np.savez(test_case,

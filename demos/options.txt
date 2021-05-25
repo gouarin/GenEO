@@ -3,17 +3,20 @@
 -Ly 1
 -n 30
 -ksp_monitor
--PCNew True
+-PCNew True 
 -PCBNN_verbose
+-PCBNN_GenEO_verbose False
+-PCNew_view True
+-PCBNN_view True
 -PCBNN_GenEO True 
 -PCNew_GenEO True 
 -PCNew_H2CoarseProjection True #choose hybrid or additive, H2addCoarseSolve=True
 -PCNew_H3addCoarseSolve True 
 -PCNew_H3CoarseProjection True
--PCBNN_switchtoASM True 
+-PCBNN_switchtoASM False 
 -PCNew_switchtoASM False 
--PCNew_switchtoASMpos True #ignored if PCNew == False or PCNew_switchtoASM == True  
-#-PCNew_ComputeRitzApos True
+-PCNew_switchtoASMpos False #ignored if PCNew == False or PCNew_switchtoASM == True  
+-PCNew_ComputeRitzApos True
 -PCBNN_GenEO_taueigmax 0.1
 -PCBNN_GenEO_taueigmin 0.1
 #-PCBNN_GenEO_eigmax 10 #overrides choice of taueigmax
@@ -23,7 +26,15 @@
 -ksp_Apos_ksp_rtol 1e-10
 #-ksp_Apos_ksp_view
 #-ksp_Apos_ksp_view_eigenvalues
+-computeRitz True
 -global_ksp_ksp_monitor_true_residual
 -global_ksp_ksp_rtol 1e-10
 -global_ksp_ksp_converged_reason
 -global_ksp_ksp_max_it 50
+-PCNew_viewV0 False
+-PCNew_viewGenEO False
+-PCNew_viewminV0 False
+-PCNew_viewnegV0 False
+-PCBNN_viewV0 False
+-PCBNN_viewGenEO False
+-PCBNN_viewminV0 False

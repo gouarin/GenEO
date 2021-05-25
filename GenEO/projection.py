@@ -30,7 +30,7 @@ class minimal_V0(object):
         """
         OptDB = PETSc.Options()
         self.mumpsCntl3 = OptDB.getReal('PCBNN_mumpsCntl3', 1e-6)
-        self.verbose =  OptDB.getBool('PCBNN_verbose', False)
+        self.verbose =  OptDB.getBool('PCBNN_GenEO_verbose', False)
 
         self.comm = mpi.COMM_SELF
         #compute the kernel of the self.ksp_Atildes operator and initialize local coarse space with it
@@ -58,10 +58,19 @@ class minimal_V0(object):
             if self.verbose:
                 PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of local solver'.format(mpi.COMM_WORLD.rank, nrb), comm=self.comm)
         else:
-            #V0s = []
             nrb = 0
         self.V0s = V0s
         self.nrb = nrb
+    def view(self):
+        print('###')
+        print(f'view of minimal_V0 in Subdomain {mpi.COMM_WORLD.rank}')
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'{self.mumpsCntl3=}') 
+        if (self.ksp_Atildes.pc.getFactorSolverType() == 'mumps'):
+            print(f'dim(Ker(Atildes)) = {self.nrb=}')
+        else:
+            print(f'{self.nrb=}, no kernel computation because pc is not mumps')
+
 
 class GenEO_V0(object):
     def __init__(self,ksp_Atildes,Ms,As,mult_max,V0s=[],ksp_Ms=[]):
@@ -115,7 +124,7 @@ class GenEO_V0(object):
         self.nev = OptDB.getInt('PCBNN_GenEO_nev', 10)
         self.maxev = OptDB.getInt('PCBNN_GenEO_maxev', 2*self.nev)
         self.mumpsCntl3 = OptDB.getReal('PCBNN_mumpsCntl3', 1e-6)
-        self.verbose =  OptDB.getBool('PCBNN_verbose', False)
+        self.verbose =  OptDB.getBool('PCBNN_GenEO_verbose', False)
 
         self.comm = mpi.COMM_SELF
 
@@ -146,18 +155,28 @@ class GenEO_V0(object):
             if self.Atildes != self.As:
                 self.solve_GenEO_eigmax(V0s, self.tau_eigmax)
             else:
+                self.Lambda_GenEO_eigmax = []
+                self.n_GenEO_eigmax = 0
                 if self.verbose:
                     PETSc.Sys.Print('This is classical additive Schwarz so eigmax = {} (+1 if fully additive preconditioner), no eigenvalue problem will be solved for eigmax'.format(self.mult_max), comm=mpi.COMM_WORLD)
         else:
+            self.Lambda_GenEO_eigmax = []
+            self.n_GenEO_eigmax = 0
             if self.verbose:
                 PETSc.Sys.Print('Skip GenEO for eigmax as user specified non positive eigmax and taueigmax', comm=mpi.COMM_WORLD)
         if self.tau_eigmin > 0:
             if self.Atildes != self.Ms:
                 self.solve_GenEO_eigmin(V0s, self.tau_eigmin)
             else:
+                self.Lambda_GenEO_eigmin = []
+                self.n_GenEO_eigmin = 0
+                self.dimKerMs = [] 
                 if self.verbose:
                     PETSc.Sys.Print('This is BNN so eigmin = 1, no eigenvalue problem will be solved for eigmin', comm=mpi.COMM_WORLD)
         else:
+            self.Lambda_GenEO_eigmin = []
+            self.n_GenEO_eigmin = 0
+            self.dimKerMs = [] 
             if self.verbose:
                 PETSc.Sys.Print('Skip GenEO for eigmin as user specified non positive eigmin and taueigmin', comm=mpi.COMM_WORLD)
 
@@ -197,15 +216,22 @@ class GenEO_V0(object):
             if abs(eps.getEigenvalue(eps.getConverged() -1)) < tauGenEO_eigmax:
                 PETSc.Sys.Print('WARNING: The largest eigenvalue computed for GenEO_eigmax in subdomain {} is {} < the threshold which is {}. Consider setting PCBNN_GenEO_nev to something larger than {}'.format(mpi.COMM_WORLD.rank, eps.getEigenvalue(eps.getConverged() - 1), tauGenEO_eigmax, eps.getConverged()), comm=self.comm)
 
+            self.Lambda_GenEO_eigmax = []
+            self.n_GenEO_eigmax = 0 
             for i in range(min(eps.getConverged(),self.maxev)):
-                if(abs(eps.getEigenvalue(i))<tauGenEO_eigmax): #TODO tell slepc that the eigenvalues are real
+                tmp = eps.getEigenvalue(i)
+                if(abs(tmp)<tauGenEO_eigmax): #TODO tell slepc that the eigenvalues are real
                     V0s.append(self.works.duplicate())
+                    self.Lambda_GenEO_eigmax.append(tmp) #only for viewing 
                     eps.getEigenvector(i,V0s[-1])
                     if self.verbose:
-                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i)) , comm=self.comm)
+                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, tmp) , comm=self.comm)
+
+                    self.n_GenEO_eigmax += 1 
                 else:
+                    self.Lambda_GenEO_eigmax.append(tmp)  #only for viewing 
                     if self.verbose:
-                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i), tauGenEO_eigmax), comm=self.comm)
+                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, tmp, tauGenEO_eigmax), comm=self.comm)
 
             self.eps_eigmax=eps #TODO FIX the only reason for this line is to make sure self.ksp_Atildes and hence PCBNN.ksp is not destroyed
         if self.verbose:
@@ -240,9 +266,9 @@ class GenEO_V0(object):
                 tempF.setMumpsIcntl(24, 1)
                 tempF.setMumpsCntl(3, self.mumpsCntl3)
                 temppc.setUp()
-                tempnrb = tempF.getMumpsInfog(28)
+                self.dimKerMs = tempF.getMumpsInfog(28)
 
-                for i in range(tempnrb):
+                for i in range(self.dimKerMs):
                     tempF.setMumpsIcntl(25, i+1)
                     self.works.set(0.)
                     tempksp.solve(self.works, self.works)
@@ -250,10 +276,10 @@ class GenEO_V0(object):
 
                 tempF.setMumpsIcntl(25, 0)
                 if self.verbose:
-                    PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of the scaled local operator (in GenEO for eigmin)'.format(mpi.COMM_WORLD.rank, tempnrb), comm=self.comm)
+                    PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors as zero energy modes of Ms (in GenEO for eigmin)'.format(mpi.COMM_WORLD.rank, self.dimKerMs), comm=self.comm)
             else:
                 tempksp = self.ksp_Ms
-
+                self.dimKerMs = []
             #Eigenvalue Problem for smallest eigenvalues
             eps = SLEPc.EPS().create(comm=PETSc.COMM_SELF)
             eps.setDimensions(nev=self.nev)
@@ -272,16 +298,42 @@ class GenEO_V0(object):
             eps.solve()
             if eps.getConverged() < self.nev:
                 PETSc.Sys.Print('WARNING: Only {} eigenvalues converged for GenEO_eigmin in subdomain {} whereas {} were requested'.format(eps.getConverged(), mpi.COMM_WORLD.rank, self.nev), comm=self.comm)
+            self.n_GenEO_eigmin = 0 
+            self.Lambda_GenEO_eigmin = []
             for i in range(min(eps.getConverged(),self.maxev)):
-                if(abs(eps.getEigenvalue(i))<tauGenEO_eigmin): #TODO tell slepc that the eigenvalues are real
-                   V0s.append(self.works.duplicate())
-                   eps.getEigenvector(i,V0s[-1])
-                   if self.verbose:
-                       PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i)), comm=self.comm)
+                tmp = eps.getEigenvalue(i)
+                if(abs(tmp)<tauGenEO_eigmin): #TODO tell slepc that the eigenvalues are real
+                    V0s.append(self.works.duplicate())
+                    self.Lambda_GenEO_eigmin.append(tmp)
+                    eps.getEigenvector(i,V0s[-1])
+                    self.n_GenEO_eigmin += 1
+                    if self.verbose:
+                        PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, tmp), comm=self.comm)
                 else:
+                    self.Lambda_GenEO_eigmin.append(tmp)
                     if self.verbose:
                         PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i), tauGenEO_eigmin), comm=self.comm)
             self.eps_eigmin=eps #the only reason for this line is to make sure self.ksp_Atildes and hence PCBNN.ksp is not destroyed
+    def view(self):
+        print('###')
+        print(f'view of GenEO in Subdomain {mpi.COMM_WORLD.rank}')
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'{self.tau_eigmax=}') 
+            print(f'{self.tau_eigmin=}') 
+            print(f'{self.eigmax=}') 
+            print(f'{self.eigmin=}') 
+            print(f'{self.nev=}') 
+            print(f'{self.maxev=}') 
+            print(f'{self.mumpsCntl3=}') 
+            print(f'{self.verbose=}') 
+            print(f'{self.mult_max=}') 
+            print(f'Additive Schwarz ? {(self.Atildes == self.As)}')
+            print(f'Neumann Neumann ? {(self.Atildes == self.Ms)}')
+        print(f'{self.Lambda_GenEO_eigmax=}')    
+        print(f'{self.n_GenEO_eigmax=}')
+        print(f'{self.dimKerMs=}') 
+        print(f'{self.Lambda_GenEO_eigmin=}')
+        print(f'{self.n_GenEO_eigmin=}')
 
 class coarse_operators(object):
     def __init__(self,V0s,A,scatter_l2g,works,work,V0_is_global=False):
@@ -289,7 +341,7 @@ class coarse_operators(object):
         V0_is_global is a Boolean that defines whether the coarse space has already been assembled over subdomains. If false, the vectors in V0s are local, will be extended by zero to the whole subdomain to obtain a global coarse space of dimension (sum(len(V0s)). If True then the vectors in V0s are already the local components of some global coarse vectors. The dimension of the global coarse space is len(V0s).
         """
         OptDB = PETSc.Options()
-        self.verbose =  OptDB.getBool('PCBNN_verbose', False)
+        self.verbose =  OptDB.getBool('PCBNN_GenEO_verbose', False)
 
         self.comm = mpi.COMM_SELF
 
@@ -343,12 +395,16 @@ class coarse_operators(object):
             if self.V0_is_global == False:
                 PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors in total'.format(mpi.COMM_WORLD.rank, len(V0s)), comm=self.comm)
 
+        if mpi.COMM_WORLD.rank == 0:
+            self.gathered_dimV0s = [] #only for view save dims of V0s from each s
         self.work2 = self.work.duplicate()
         if(self.V0_is_global == False):
             V0 = []
             for i in range(mpi.COMM_WORLD.size):
                 nrbl = len(V0s) if i == mpi.COMM_WORLD.rank else None
                 nrbl = mpi.COMM_WORLD.bcast(nrbl, root=i)
+                if mpi.COMM_WORLD.rank == 0:
+                    self.gathered_dimV0s.append(nrbl) #only for view save dims of V0s from each s
                 for irbm in range(nrbl):
                     V0.append(V0s[irbm].copy() if i == mpi.COMM_WORLD.rank else None)
         else:
@@ -404,7 +460,8 @@ class coarse_operators(object):
             # print(f'norm Acoarsevec {debug2} = {debug5} = {debug6} = {debug7}')
 
 
-        PETSc.Sys.Print('There are {} vectors in the coarse space.'.format(len(V0)), comm=mpi.COMM_WORLD)
+        self.dim = len(V0)
+        PETSc.Sys.Print('There are {} vectors in the coarse space.'.format(self.dim), comm=mpi.COMM_WORLD)
 
         #Define, fill and factorize coarse problem matrix
         Delta = PETSc.Mat().create(comm=PETSc.COMM_SELF)
@@ -546,6 +603,13 @@ class coarse_operators(object):
 
         for i in range(len(self.V0)):
             x.axpy(-alpha[i], self.AV0[i])
+    def view(self):
+        if mpi.COMM_WORLD.rank == 0:
+            print('###')
+            print(f'view of coarse_operators')# in Subdomain {mpi.COMM_WORLD.rank}')
+            print(f'{self.V0_is_global=}') 
+            print(f'{self.gathered_dimV0s=}') 
+
 
 class projection(object):
     def __init__(self,PCBNN):
