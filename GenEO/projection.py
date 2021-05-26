@@ -10,7 +10,7 @@ from .bc import bcApplyWest_vec
 from slepc4py import SLEPc
 
 class minimal_V0(object):
-    def __init__(self,ksp_Atildes,V0s=[]):
+    def __init__(self,ksp_Atildes,V0s=[],labs=[]):
         """
         Compute local contributions to the minimal coarse space, i.e., the kernel of Atildes. Only implemented if the solver for Atildes is mumps.
         Parameters
@@ -53,6 +53,7 @@ class minimal_V0(object):
                 works.set(0.)
                 self.ksp_Atildes.solve(works, works)
                 V0s.append(works.copy())
+                labs.append('Ker Atildes')
 
             F.setMumpsIcntl(25, 0)
             if self.verbose:
@@ -60,12 +61,14 @@ class minimal_V0(object):
         else:
             nrb = 0
         self.V0s = V0s
+        self.labs = labs
         self.nrb = nrb
     def view(self):
         print('###')
         print(f'view of minimal_V0 in Subdomain {mpi.COMM_WORLD.rank}')
         if mpi.COMM_WORLD.rank == 0:
             print(f'{self.mumpsCntl3=}') 
+            print(f'{self.labs=}')
         if (self.ksp_Atildes.pc.getFactorSolverType() == 'mumps'):
             print(f'dim(Ker(Atildes)) = {self.nrb=}')
         else:
@@ -73,7 +76,7 @@ class minimal_V0(object):
 
 
 class GenEO_V0(object):
-    def __init__(self,ksp_Atildes,Ms,As,mult_max,V0s=[],ksp_Ms=[]):
+    def __init__(self,ksp_Atildes,Ms,As,mult_max,V0s=[],labs=[],ksp_Ms=[]):
         """
         Initialize the coarse space and corresponding projection preconditioner and other coarse operators.
         The default coarse space is the kernel of the local operators if these have been factorized
@@ -153,7 +156,7 @@ class GenEO_V0(object):
 
         if self.tau_eigmax > 0:
             if self.Atildes != self.As:
-                self.solve_GenEO_eigmax(V0s, self.tau_eigmax)
+                self.solve_GenEO_eigmax(V0s, labs, self.tau_eigmax)
             else:
                 self.Lambda_GenEO_eigmax = []
                 self.n_GenEO_eigmax = 0
@@ -166,7 +169,7 @@ class GenEO_V0(object):
                 PETSc.Sys.Print('Skip GenEO for eigmax as user specified non positive eigmax and taueigmax', comm=mpi.COMM_WORLD)
         if self.tau_eigmin > 0:
             if self.Atildes != self.Ms:
-                self.solve_GenEO_eigmin(V0s, self.tau_eigmin)
+                self.solve_GenEO_eigmin(V0s, labs, self.tau_eigmin)
             else:
                 self.Lambda_GenEO_eigmin = []
                 self.n_GenEO_eigmin = 0
@@ -182,8 +185,9 @@ class GenEO_V0(object):
 
 
         self.V0s = V0s
+        self.labs = labs
 
-    def solve_GenEO_eigmax(self, V0s, tauGenEO_eigmax):
+    def solve_GenEO_eigmax(self, V0s, labs, tauGenEO_eigmax):
         """
         Solves the local GenEO eigenvalue problem related to the largest eigenvalue eigmax.
 
@@ -222,6 +226,7 @@ class GenEO_V0(object):
                 tmp = eps.getEigenvalue(i)
                 if(abs(tmp)<tauGenEO_eigmax): #TODO tell slepc that the eigenvalues are real
                     V0s.append(self.works.duplicate())
+                    labs.append(f'\lambda_{i}^\sharp = {tmp}')
                     self.Lambda_GenEO_eigmax.append(tmp) #only for viewing 
                     eps.getEigenvector(i,V0s[-1])
                     if self.verbose:
@@ -237,7 +242,7 @@ class GenEO_V0(object):
         if self.verbose:
             PETSc.Sys.Print('Subdomain number {} contributes {} coarse vectors after first GenEO'.format(mpi.COMM_WORLD.rank, len(V0s)), comm=self.comm)
 
-    def solve_GenEO_eigmin(self, V0s, tauGenEO_eigmin):
+    def solve_GenEO_eigmin(self, V0s, labs, tauGenEO_eigmin):
         """
         Solves the local GenEO eigenvalue problem related to the smallest eigenvalue eigmin.
 
@@ -273,6 +278,8 @@ class GenEO_V0(object):
                     self.works.set(0.)
                     tempksp.solve(self.works, self.works)
                     V0s.append(self.works.copy())
+                    labs.append(f'Ker(Ms)')
+
 
                 tempF.setMumpsIcntl(25, 0)
                 if self.verbose:
@@ -304,6 +311,7 @@ class GenEO_V0(object):
                 tmp = eps.getEigenvalue(i)
                 if(abs(tmp)<tauGenEO_eigmin): #TODO tell slepc that the eigenvalues are real
                     V0s.append(self.works.duplicate())
+                    labs.append(f'\lambda_{i}^ \ flat = {tmp}')
                     self.Lambda_GenEO_eigmin.append(tmp)
                     eps.getEigenvector(i,V0s[-1])
                     self.n_GenEO_eigmin += 1
@@ -334,6 +342,7 @@ class GenEO_V0(object):
         print(f'{self.dimKerMs=}') 
         print(f'{self.Lambda_GenEO_eigmin=}')
         print(f'{self.n_GenEO_eigmin=}')
+        print(f'{self.labs=}')
 
 class coarse_operators(object):
     def __init__(self,V0s,A,scatter_l2g,works,work,V0_is_global=False):

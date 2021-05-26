@@ -149,12 +149,14 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         if self.viewminV0 == True:
             self.minV0.view()
         if self.GenEO == True:
-            self.GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,self.minV0.V0s)
+            self.GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.As,self.mult_max,self.minV0.V0s, self.minV0.labs)
             self.V0s = self.GenEOV0.V0s
+            self.labs = self.GenEOV0.labs
             if self.viewGenEOV0 == True:
                 self.GenEOV0.view()
         else:
             self.V0s = self.minV0.V0s
+            self.labs = self.minV0.labs
         self.proj = coarse_operators(self.V0s,self.A,self.scatter_l2g,vlocal,self.work)
         if self.viewV0 == True:
             self.proj.view()
@@ -242,6 +244,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         self.gathered_nints = mpi.COMM_WORLD.gather(self.nints, root=0)
         self.gathered_Gammas =  mpi.COMM_WORLD.gather(self.nGammas, root=0)
         self.minV0.gathered_dim = mpi.COMM_WORLD.gather(self.minV0.nrb, root=0)
+        self.gathered_labs = mpi.COMM_WORLD.gather(self.labs, root=0)
         if self.GenEO == True:
             self.GenEOV0.gathered_nsharp = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmax, root=0)
             self.GenEOV0.gathered_nflat = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmin, root=0)
@@ -271,6 +274,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
             print(f'{self.nGamma=}')
             print(f'{self.nint=}')
             print(f'{self.nglob=}')
+            print(f'{self.gathered_labs=}')
 
             print(f'### info about minV0.V0s = (Ker(Atildes)) ###')
             print(f'{self.minV0.mumpsCntl3=}') 
@@ -329,6 +333,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
                minV0_gathered_dim  = np.asarray(self.minV0.gathered_dim),
                V0dim = np.sum(self.proj.gathered_dimV0s),
                minV0dim = np.sum(self.minV0.gathered_dim), 
+               gathered_labs=  np.asarray(self.gathered_labs),
             )
             if self.GenEO == True:
                 np.savez(f'{self.test_case}_GenEO',
@@ -646,10 +651,6 @@ class PCNew:
             pc_Atildes.setType('cholesky')
             pc_Atildes.setFactorSolverType('mumps')
             ksp_Atildes.setFromOptions()
-            minV0 = minimal_V0(ksp_Atildes,invmusVnegs)
-            minV0s = minV0.V0s
-            if self.viewminV0 == True:
-                self.minV0.view()
 
             #once a ksp has been passed to SLEPs it cannot be used again so we use a second, identical, ksp for SLEPc as a temporary fix
             ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -675,10 +676,6 @@ class PCNew:
             pc_Atildes.setType('python')
             pc_Atildes.setPythonContext(invRsAposRsts_ctx(As,RsVnegs,RsDnegs,works))
             ksp_Atildes.setFromOptions()
-            minV0 = minimal_V0(ksp_Atildes,invmusVnegs)
-            minV0s = minV0.V0s
-            if self.viewminV0 == True:
-                self.minV0.view()
 
             #once a ksp has been passed to SLEPs it cannot be used again so we use a second, identical, ksp for SLEPc as a temporary fix
             ksp_Atildes_forSLEPc = PETSc.KSP().create(comm=PETSc.COMM_SELF)
@@ -699,10 +696,6 @@ class PCNew:
             pc_Atildes.setType('python')
             pc_Atildes.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
             ksp_Atildes.setFromOptions()
-            minV0 = minimal_V0(ksp_Atildes,invmusVnegs) #won't compute anything more vecause the solver for Atildes is not mumps
-            minV0s = minV0.V0s
-            if self.viewminV0 == True:
-                self.minV0.view()
 
 
             #once a ksp has been passed to SLEPs it cannot be used again so we use a second, identical, ksp for SLEPc as a temporary fix
@@ -714,6 +707,15 @@ class PCNew:
             pc_Atildes_forSLEPc.setType('python')
             pc_Atildes_forSLEPc.setPythonContext(scaledmats_ctx(invAposs,invmus,invmus) )
             ksp_Atildes_forSLEPc.setFromOptions()
+
+        labs=[]
+        for i, tmp in enumerate(Dnegs):
+            labs.append(f'(\Lambda_-^s)_{i} = {-1.*tmp}')
+        minV0 = minimal_V0(ksp_Atildes,invmusVnegs,labs) #won't compute anything more vecause the solver for Atildes is not mumps
+        minV0s = minV0.V0s
+        labs = minV0.labs
+        if self.viewminV0 == True:
+            minV0.view()
 
         self.A = A_mpiaij
         self.Apos = Apos
@@ -732,6 +734,7 @@ class PCNew:
         self.mult_max = mult_max
         self.ksp_Atildes = ksp_Atildes
         self.minV0 = minV0
+        self.labs = labs
         self.Dnegs = Dnegs
         self.nnegs = nnegs
 
@@ -739,10 +742,12 @@ class PCNew:
         self.RsAposRsts.mult(self.works_1,self.works_2)
 
         if self.GenEO == True:
-          self.GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.RsAposRsts,self.mult_max,minV0s,self.ksp_Ms_forSLEPc)
+          print(f'{labs=}')
+          self.GenEOV0 = GenEO_V0(self.ksp_Atildes_forSLEPc,self.Ms,self.RsAposRsts,self.mult_max,minV0s,labs,self.ksp_Ms_forSLEPc)
           self.V0s = self.GenEOV0.V0s
           if self.viewGenEOV0 == True:
               self.GenEOV0.view()
+              print(f'{self.GenEOV0.labs=}')
         else:
           self.V0s = minV0s
 
@@ -1034,6 +1039,7 @@ class PCNew:
         self.gathered_nints = mpi.COMM_WORLD.gather(self.nints, root=0)
         self.gathered_Gammas =  mpi.COMM_WORLD.gather(self.nGammas, root=0)
         self.minV0.gathered_dim = mpi.COMM_WORLD.gather(self.minV0.nrb, root=0)
+        self.gathered_labs = mpi.COMM_WORLD.gather(self.labs, root=0)
         self.gathered_nneg = mpi.COMM_WORLD.gather(self.nnegs, root=0)
         self.gathered_Dneg = mpi.COMM_WORLD.gather(self.Dnegs, root=0)
         if self.GenEO == True:
@@ -1067,6 +1073,7 @@ class PCNew:
             print(f'{self.nGamma=}')
             print(f'{self.nint=}')
             print(f'{self.nglob=}')
+            print(f'{self.gathered_labs=}')
             print(f'### info about minV0.V0s = (Ker(Atildes)) ###')
             print(f'{self.minV0.mumpsCntl3=}') 
             print(f'###info about Vnegs = rank(Anegs) = coarse components for proj3')
@@ -1128,6 +1135,7 @@ class PCNew:
             nint               = self.nint,
             nglob              = self.nglob,
             minV0_mumpsCntl3   = self.minV0.mumpsCntl3,
+            gathered_labs=  np.asarray(self.gathered_labs),
             gathered_nneg      = self.gathered_nneg,
             minV0_gathered_dim = self.minV0.gathered_dim,
             ritz_eigs_Apos     = self.ritz_eigs_apos ,
