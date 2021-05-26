@@ -28,6 +28,7 @@ nu2 = OptDB.getReal('nu2', 0.4)
 test_case = OptDB.getString('test_case', 'default')
 isPCNew = OptDB.getBool('PCNew', True)
 computeRitz  =  OptDB.getBool('computeRitz', True)
+stripe_nb = OptDB.getInt('stripe_nb', 0)
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
@@ -36,16 +37,35 @@ da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly)
 da.setMatType(PETSc.Mat.Type.IS)
 
-def lame_coeff(x, y, v1, v2):
+def lame_coeff(x, y, v1, v2, stripe_nb):
+    if stripe_nb == 0:
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'Test number {stripe_nb} - no stripes E = {E1}')
+        mask = False
+    elif stripe_nb == 1:
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'Test number {stripe_nb} - one stripe')
+        mask = np.logical_and(1./7<=y, y<=2./7)
+    elif stripe_nb == 2:
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'Test number {stripe_nb} - two stripes')
+        mask= np.logical_or(np.logical_and(1./7<=y, y<=2./7),np.logical_and(3./7<=y, y<=4./7))
+    elif stripe_nb == 3:
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'Test number {stripe_nb} - three stripes')
+        mask= np.logical_or(np.logical_and(1./7<=y, y<=2./7),np.logical_and(3./7<=y, y<=4./7), np.logical_and(5./7<=y, y<=6./7))
+    else:
+        if mpi.COMM_WORLD.rank == 0:
+            print(f'Test number {stripe_nb} is not implemented, instead I set E={E2}')
+        mask = True
     output = np.empty(x.shape)
-    mask = np.logical_or(np.logical_and(.2<=y, y<=.4),np.logical_and(.6<=y, y<=.8))
     output[mask] = v1
     output[np.logical_not(mask)] = v2
     return output
 
 # non constant Young's modulus and Poisson's ratio
-E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2))
-nu = buildCellArrayWithFunction(da, lame_coeff, (nu1,nu2))
+E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2,stripe_nb))
+nu = buildCellArrayWithFunction(da, lame_coeff, (nu1,nu2,stripe_nb))
 
 lamb = (nu*E)/((1+nu)*(1-2*nu))
 mu = .5*E/(1+nu)

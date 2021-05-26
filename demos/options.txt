@@ -1,8 +1,10 @@
--E1 1.e12
--Lx 1
+-E1 1.e10
+-Lx 4
 -Ly 1
--n 30
--PCNew True 
+-n 22
+-stripe_nb 2
+-test_case stripes 
+-PCNew False 
 -PCBNN_verbose
 -PCBNN_GenEO_verbose False
 -PCNew_view True
