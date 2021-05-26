@@ -155,6 +155,8 @@ if computeRitz:
     Ritz = ksp.computeEigenvalues()
     Ritzmin = Ritz.min()
     Ritzmax = Ritz.max()
+else:
+    Ritz = []
 convhistory = ksp.getConvergenceHistory()
 
 
@@ -168,18 +170,16 @@ tmp2 = b.norm()
 if mpi.COMM_WORLD.rank == 0:
     print(f'norm of A x - b = {tmp1}, norm of b = {tmp2}')
     print('convergence history', convhistory)
-    print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')  
+    if computeRitz:
+        print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')  
 
-#if mpi.COMM_WORLD.rank == 0:
-#    np.savez(test_case,
-#             convergence=np.asarray(ksp.getConvergenceHistory()[:]),
-#             eig=np.asarray(eig[:]),
-#             eig_Apos=pcbnn.ritz_eig_apos,
-#    )
-#np.savez(f'{test_case}_{mpi.COMM_WORLD.rank}',
-#         nnegs=pcbnn.nnegs,
-#
-#)
+if mpi.COMM_WORLD.rank == 0:
+    np.savez(test_case,
+             precresiduals =np.asarray(ksp.getConvergenceHistory()[:]),
+             ritz_eigs_A =np.asarray(Ritz[:]),
+             l2normofAxminusb = tmp1,
+             l2normofA = tmp2
+    )
 
 #if mpi.COMM_WORLD.rank == 0:
 #    print('compare with MUMPS global solution')

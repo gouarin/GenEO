@@ -2,7 +2,6 @@
 -Lx 1
 -Ly 1
 -n 30
--ksp_monitor
 -PCNew True 
 -PCBNN_verbose
 -PCBNN_GenEO_verbose False
@@ -38,3 +37,5 @@
 -PCBNN_viewV0 False
 -PCBNN_viewGenEO False
 -PCBNN_viewminV0 False
+#-options_left  #gives a list of all options used and unused
+#-log_view
