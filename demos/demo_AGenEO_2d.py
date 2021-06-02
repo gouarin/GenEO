@@ -7,13 +7,85 @@ from __future__ import print_function, division
 import sys, petsc4py
 petsc4py.init(sys.argv)
 import mpi4py.MPI as mpi
+import os
 from petsc4py import PETSc
 import numpy as np
+import json
 from GenEO import *
 
 def rhs(coords, rhs):
     n = rhs.shape
     rhs[..., 1] = -9.81
+
+def save_json(path, E1, E2, stripe_nb, ksp, pc, ritz):
+    results = {}
+
+    if mpi.COMM_WORLD.rank == 0:
+        results['E1'] = E1
+        results['E2'] = E2
+        results['stripe_nb'] = stripe_nb
+        results['gathered_ns'] = pc.gathered_ns
+        results['gathered_Gammas'] = pc.gathered_Gammas
+        results['nGamma'] = pc.nglob - pc.nints
+        results['nglob'] = pc.nglob
+        if hasattr(pc.proj, 'gathered_dimV0s'):
+            results['gathered_dimV0s'] = pc.proj.gathered_dimV0s
+            results['V0dim'] = float(np.sum(pc.proj.gathered_dimV0s))
+        results['minV0_gathered_dim']  = pc.minV0.gathered_dim
+        results['minV0dim'] = float(np.sum(pc.minV0.gathered_dim))
+        results['gathered_labs'] =  pc.gathered_labs
+
+        if pc.GenEO == True:
+            results['GenEOV0_gathered_nsharp'] = pc.GenEOV0.gathered_nsharp
+            results['GenEOV0_gathered_nflat'] = pc.GenEOV0.gathered_nflat
+            results['GenEOV0_gathered_dimKerMs'] = pc.GenEOV0.gathered_dimKerMs
+            print(pc.GenEOV0.gathered_Lambdasharp)
+            results['GenEOV0_gathered_Lambdasharp'] = [[(d.real, d.imag) for d in l] for l in pc.GenEOV0.gathered_Lambdasharp]
+            results['GenEOV0_gathered_Lambdaflat'] = pc.GenEOV0.gathered_Lambdaflat
+            results['sum_nsharp'] = float(np.sum(pc.GenEOV0.gathered_nsharp))
+            results['sum_nflat'] = float(np.sum(pc.GenEOV0.gathered_nflat))
+            results['sum_dimKerMs'] = float(np.sum(pc.GenEOV0.gathered_dimKerMs))
+
+        if isinstance(pc, PCNew):
+            results['gathered_nneg'] = pc.gathered_nneg
+            results['sum_gathered_nneg'] = float(np.sum(pc.gathered_nneg))
+            if pc.compute_ritz_apos and pc.ritz_eigs_apos is not None:
+                rmin, rmax = pc.ritz_eigs_apos.min(), pc.ritz_eigs_apos.max()
+                kappa = rmax/rmin
+                results['kappa_apos'] = (kappa.real, kappa.imag)
+                results['lambdamin_apos'] = (rmin.real, rmin.imag)
+                results['lambdamax_apos'] = (rmax.real, rmax.imag)
+
+        results['precresiduals'] = ksp.getConvergenceHistory()[:].tolist()
+        results['l2normofAxminusb'] = tmp1
+        results['l2normofA'] = tmp2
+        if ritz is not None:
+            rmin, rmax = ritz.min(), ritz.max()
+            kappa = rmax/rmin
+            results['lambdamin'] = (rmin.real, rmin.imag)
+            results['lambdamax'] = (rmax.real, rmax.imag)
+            results['kappa'] = (kappa.real, kappa.imag)
+
+        with open(f'{path}/results.json', 'w') as f:
+            json.dump(results, f, indent=4, sort_keys=True)
+
+def save_coarse_vec(path, da, pcbnn):
+    coords = da.getCoordinates()
+    pcbnn.scatter_l2g(coords, pcbnn.works_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+    pcbnn.works_1.name = "coordinates"
+
+    for iv, v in enumerate(pcbnn.V0s):
+        viewer = PETSc.Viewer().createHDF5(f'{path}/coarse_vec_{iv}_{mpi.COMM_WORLD.rank}.h5', 'w', comm = PETSc.COMM_SELF)
+        v.name = "coarse_vec"
+        v.view(viewer)
+        pcbnn.works_1.view(viewer)
+        viewer.destroy()
+
+    prop = {}
+    prop['eigs'] = pcbnn.labs
+
+    with open(f'{path}/properties_{mpi.COMM_WORLD.rank}.txt', 'w') as outfile:
+        json.dump(prop, outfile)
 
 OptDB = PETSc.Options()
 Lx = OptDB.getInt('Lx', 4)
@@ -29,6 +101,10 @@ test_case = OptDB.getString('test_case', 'default')
 isPCNew = OptDB.getBool('PCNew', True)
 computeRitz  =  OptDB.getBool('computeRitz', True)
 stripe_nb = OptDB.getInt('stripe_nb', 0)
+
+if mpi.COMM_WORLD.rank == 0:
+    if not os.path.exists(test_case):
+        os.mkdir(test_case)
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
@@ -119,6 +195,8 @@ if isPCNew:
 else:
     pcbnn = PCBNN(A)
 
+save_coarse_vec(test_case, da, pcbnn)
+
 ##############compute x FOR INITIALIZATION OF PCG
 if mpi.COMM_WORLD.rank == 0:
     print('Solve a problem with A and H3')
@@ -176,7 +254,7 @@ if computeRitz:
     Ritzmin = Ritz.min()
     Ritzmax = Ritz.max()
 else:
-    Ritz = []
+    Ritz = None
 convhistory = ksp.getConvergenceHistory()
 
 
@@ -191,15 +269,9 @@ if mpi.COMM_WORLD.rank == 0:
     print(f'norm of A x - b = {tmp1}, norm of b = {tmp2}')
     print('convergence history', convhistory)
     if computeRitz:
-        print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')  
+        print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')
 
-if mpi.COMM_WORLD.rank == 0:
-    np.savez(test_case,
-             precresiduals =np.asarray(ksp.getConvergenceHistory()[:]),
-             ritz_eigs_A =np.asarray(Ritz[:]),
-             l2normofAxminusb = tmp1,
-             l2normofA = tmp2
-    )
+save_json(test_case, E1, E2, stripe_nb, ksp, pcbnn, Ritz)
 
 #if mpi.COMM_WORLD.rank == 0:
 #    print('compare with MUMPS global solution')

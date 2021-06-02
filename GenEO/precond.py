@@ -94,7 +94,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
         scatter_l2g(vlocal, vglobal, PETSc.InsertMode.ADD_VALUES)
         scatter_l2g(vglobal, vlocal, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         NULL,mult_max = vglobal.max()
-        if self.viewPC: 
+        if self.viewPC:
             _, self.ns = vlocal.getSizes()
             _, self.nglob = vglobal.getSizes()
             tempglobal = vglobal.getArray(readonly=True)
@@ -162,7 +162,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
             self.proj.view()
 
         if self.viewPC == True:
-            self.view()            
+            self.view()
     def mult(self, x, y):
         """
         Applies the domain decomposition preconditioner followed by the projection preconditioner to a vector.
@@ -239,6 +239,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
 
         """
         self.mult(x,y)
+
     def view(self):
         self.gathered_ns = mpi.COMM_WORLD.gather(self.ns, root=0)
         self.gathered_nints = mpi.COMM_WORLD.gather(self.nints, root=0)
@@ -264,10 +265,10 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
             print(f'{self.viewV0= }')
             print(f'{self.viewGenEOV0= }')
             print(f'{self.viewminV0= }')
-            print(f'{self.mult_max=}') 
+            print(f'{self.mult_max=}')
             print(f'### info about the subdomains ###')
             self.nint = np.sum(self.gathered_nints)
-            self.nGamma = self.nglob - self.nint 
+            self.nGamma = self.nglob - self.nint
             print(f'{self.gathered_ns =}')
             print(f'{self.gathered_nints =}')
             print(f'{self.gathered_Gammas=}')
@@ -277,39 +278,39 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
             print(f'{self.gathered_labs=}')
 
             print(f'### info about minV0.V0s = (Ker(Atildes)) ###')
-            print(f'{self.minV0.mumpsCntl3=}') 
+            print(f'{self.minV0.mumpsCntl3=}')
             if (self.ksp_Atildes.pc.getFactorSolverType() == 'mumps'):
                 print(f'dim(Ker(Atildes)) = {self.minV0.gathered_dim}')
             else:
                 print(f'Ker(Atildes) not computed because pc is not mumps')
             if self.GenEO == True:
                 print(f'### info about GenEOV0.V0s ###')
-                print(f'{self.GenEOV0.tau_eigmax=}') 
-                print(f'{self.GenEOV0.tau_eigmin=}') 
-                print(f'{self.GenEOV0.eigmax=}') 
-                print(f'{self.GenEOV0.eigmin=}') 
-                print(f'{self.GenEOV0.nev=}') 
-                print(f'{self.GenEOV0.maxev=}') 
-                print(f'{self.GenEOV0.mumpsCntl3=}') 
-                print(f'{self.GenEOV0.verbose=}') 
+                print(f'{self.GenEOV0.tau_eigmax=}')
+                print(f'{self.GenEOV0.tau_eigmin=}')
+                print(f'{self.GenEOV0.eigmax=}')
+                print(f'{self.GenEOV0.eigmin=}')
+                print(f'{self.GenEOV0.nev=}')
+                print(f'{self.GenEOV0.maxev=}')
+                print(f'{self.GenEOV0.mumpsCntl3=}')
+                print(f'{self.GenEOV0.verbose=}')
                 print(f'{self.GenEOV0.gathered_nsharp=}')
-                print(f'{self.GenEOV0.gathered_nflat=}') 
+                print(f'{self.GenEOV0.gathered_nflat=}')
                 print(f'{self.GenEOV0.gathered_dimKerMs=}')
                 #print(f'{np.array(self.GenEOV0.gathered_Lambdasharp)=}')
                 #print(f'{np.array(self.GenEOV0.gathered_Lambdaflat)=}')
             print(f'### info about the coarse space ###')
-            print(f'{self.proj.V0_is_global=}') 
-            print(f'{self.proj.gathered_dimV0s=}') 
+            print(f'{self.proj.V0_is_global=}')
+            print(f'{self.proj.gathered_dimV0s=}')
             if self.GenEO == True:
-                print(f'global dim V0 = {np.sum(self.proj.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes)) + ({np.sum(self.GenEOV0.gathered_nsharp)} from GenEO_eigmax) + ({np.sum(self.GenEOV0.gathered_nflat)+np.sum(self.GenEOV0.gathered_dimKerMs)} from GenEO_eigmin)') 
+                print(f'global dim V0 = {np.sum(self.proj.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes)) + ({np.sum(self.GenEOV0.gathered_nsharp)} from GenEO_eigmax) + ({np.sum(self.GenEOV0.gathered_nflat)+np.sum(self.GenEOV0.gathered_dimKerMs)} from GenEO_eigmin)')
             else:
-                print(f'global dim V0 = {np.sum(self.proj.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes))') 
+                print(f'global dim V0 = {np.sum(self.proj.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes))')
             print('#############################')
             self.savetofile()
 
     def savetofile(self):
         if mpi.COMM_WORLD.rank == 0:
-            np.savez(f'{self.test_case}_init',
+            np.savez(f'{self.test_case}/init',
                switchtoASM=  self.switchtoASM,
                kscaling   =  self.kscaling,
                verbose    =  self.verbose,
@@ -321,22 +322,22 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
                viewGenEOV0=  self.viewGenEOV0,
                viewminV0  =  self.viewminV0,
                mult_max   =  self.mult_max ,
-               gathered_ns      =   np.asarray(self.gathered_ns), 
+               gathered_ns      =   np.asarray(self.gathered_ns),
                gathered_nints   =   np.asarray(self.gathered_nints),
                gathered_Gammas  =   np.asarray(self.gathered_Gammas),
                nGamma           =   self.nGamma,
                nint             =   self.nint,
                nglob            =   self.nglob,
-               minV0_mumpsCntl3 = self.minV0.mumpsCntl3, 
-               V0_is_global= self.proj.V0_is_global, 
-               gathered_dimV0s=  np.asarray(self.proj.gathered_dimV0s), 
+               minV0_mumpsCntl3 = self.minV0.mumpsCntl3,
+               V0_is_global= self.proj.V0_is_global,
+               gathered_dimV0s=  np.asarray(self.proj.gathered_dimV0s),
                minV0_gathered_dim  = np.asarray(self.minV0.gathered_dim),
                V0dim = np.sum(self.proj.gathered_dimV0s),
-               minV0dim = np.sum(self.minV0.gathered_dim), 
+               minV0dim = np.sum(self.minV0.gathered_dim),
                gathered_labs=  np.asarray(self.gathered_labs),
             )
             if self.GenEO == True:
-                np.savez(f'{self.test_case}_GenEO',
+                np.savez(f'{self.test_case}/GenEO',
                 tau_eigmax        = self.GenEOV0.tau_eigmax,
                 tau_eigmin        = self.GenEOV0.tau_eigmin,
                 eigmax            = self.GenEOV0.eigmax,
@@ -352,7 +353,7 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
                 gathered_Lambdaflat = np.asarray(self.GenEOV0.gathered_Lambdaflat,dtype='object'),
                 sum_nsharp = np.sum(self.GenEOV0.gathered_nsharp),
                 sum_nflat = np.sum(self.GenEOV0.gathered_nflat),
-                sum_dimKerMs = np.sum(self.GenEOV0.gathered_dimKerMs)  
+                sum_dimKerMs = np.sum(self.GenEOV0.gathered_dimKerMs)
                 )
 
 
@@ -446,7 +447,7 @@ class PCNew:
         NULL,mult_max = work.max()
 
         scatter_l2g(work, mus, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
-        if self.viewPC: 
+        if self.viewPC:
             _, self.ns = mus.getSizes()
             _, self.nglob = work.getSizes()
             tempglobal = work.getArray(readonly=True)
@@ -526,18 +527,18 @@ class PCNew:
                 invmusVnegs.append(invmus * Vnegs[-1])
             else :
                 Dposs.append(tempscalar)
-        if self.verbose: 
+        if self.verbose:
             PETSc.Sys.Print('for Bs in subdomain {}: ncv= {} with {} negative eigs'.format(mpi.COMM_WORLD.rank, eps.getConverged(), len(Vnegs), self.nev), comm=PETSc.COMM_SELF)
             print(f'values of Dnegs {np.array(Dnegs)}')
         nnegs = len(Dnegs)
         #print(f'length of Dnegs {nnegs}')
         #END diagonalize Bs
 
-        if self.viewnegV0: 
+        if self.viewnegV0:
             print('###')
             print(f'view of Vneg in Subdomain {mpi.COMM_WORLD.rank}')
             print(f'ncv = {eps.getConverged()} eigenvalues converged')
-            print(f'{nnegs=}') 
+            print(f'{nnegs=}')
             print(f'values of Dnegs: {np.array(Dnegs)}')
 
         works.set(0.)
@@ -779,7 +780,7 @@ class PCNew:
         self.ksp_Apos.setFromOptions()
         self.pc_Apos.setFromOptions()
         #At this point the preconditioner for Apos is ready
-        if self.verbose: 
+        if self.verbose:
             if mpi.COMM_WORLD.rank == 0:
                 print(f'#V0(H2) = rank(Ker(Pi2)) = {len(self.proj2.V0)}')
         works.set(0.)
@@ -790,13 +791,13 @@ class PCNew:
             for j in range(nnegi):
                 Vneg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
         AposinvV0 = []
-        self.ritz_eigs_apos = [] 
+        self.ritz_eigs_apos = None
         for vec in Vneg:
             self.works = vec.copy()
             self.work.set(0)
             self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
             self.ksp_Apos.solve(self.work,self.work_2)
-            if self.compute_ritz_apos and self.ritz_eigs_apos == []:
+            if self.compute_ritz_apos and self.ritz_eigs_apos is None:
                 self.ritz_eigs_apos = self.ksp_Apos.computeEigenvalues()
                 self.ksp_Apos.setComputeEigenvalues(False)
 
@@ -813,7 +814,7 @@ class PCNew:
             self.proj.view()
 
         if self.viewPC == True:
-            self.view()            
+            self.view()
 
 
 ##Debug DEBUG
@@ -1045,7 +1046,7 @@ class PCNew:
         if self.GenEO == True:
             self.GenEOV0.gathered_nsharp = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmax, root=0)
             self.GenEOV0.gathered_nflat = mpi.COMM_WORLD.gather(self.GenEOV0.n_GenEO_eigmin, root=0)
-            #self.GenEOV0.gathered_dimKerMs = mpi.COMM_WORLD.gather(self.GenEOV0.dimKerMs, root=0)
+            self.GenEOV0.gathered_dimKerMs = mpi.COMM_WORLD.gather(self.GenEOV0.dimKerMs, root=0)
             self.GenEOV0.gathered_Lambdasharp = mpi.COMM_WORLD.gather(self.GenEOV0.Lambda_GenEO_eigmax, root=0)
             self.GenEOV0.gathered_Lambdaflat = mpi.COMM_WORLD.gather(self.GenEOV0.Lambda_GenEO_eigmin, root=0)
         if mpi.COMM_WORLD.rank == 0:
@@ -1062,11 +1063,11 @@ class PCNew:
             print(f'{self.viewGenEOV0= }')
             print(f'{self.viewnegV0= }')
             print(f'{self.viewminV0= }')
-            print(f'{self.compute_ritz_apos=}') 
-            print(f'{self.mult_max=}') 
+            print(f'{self.compute_ritz_apos=}')
+            print(f'{self.mult_max=}')
             print(f'### info about the subdomains ###')
             self.nint = np.sum(self.gathered_nints)
-            self.nGamma = self.nglob - self.nint 
+            self.nGamma = self.nglob - self.nint
             print(f'{self.gathered_ns =}')
             print(f'{self.gathered_nints =}')
             print(f'{self.gathered_Gammas=}')
@@ -1075,7 +1076,7 @@ class PCNew:
             print(f'{self.nglob=}')
             print(f'{self.gathered_labs=}')
             print(f'### info about minV0.V0s = (Ker(Atildes)) ###')
-            print(f'{self.minV0.mumpsCntl3=}') 
+            print(f'{self.minV0.mumpsCntl3=}')
             print(f'###info about Vnegs = rank(Anegs) = coarse components for proj3')
             print(f'{self.gathered_nneg=}')
             print(f'{np.sum(self.gathered_nneg)=}')
@@ -1085,36 +1086,36 @@ class PCNew:
                 print(f'Ker(Atildes) not computed because pc is not mumps')
             if self.GenEO == True:
                 print(f'### info about GenEOV0.V0s  ###')
-                print(f'{self.GenEOV0.tau_eigmax=}') 
-                print(f'{self.GenEOV0.tau_eigmin=}') 
-                print(f'{self.GenEOV0.eigmax=}') 
-                print(f'{self.GenEOV0.eigmin=}') 
-                print(f'{self.GenEOV0.nev=}') 
-                print(f'{self.GenEOV0.maxev=}') 
-                print(f'{self.GenEOV0.mumpsCntl3=}') 
-                print(f'{self.GenEOV0.verbose=}') 
+                print(f'{self.GenEOV0.tau_eigmax=}')
+                print(f'{self.GenEOV0.tau_eigmin=}')
+                print(f'{self.GenEOV0.eigmax=}')
+                print(f'{self.GenEOV0.eigmin=}')
+                print(f'{self.GenEOV0.nev=}')
+                print(f'{self.GenEOV0.maxev=}')
+                print(f'{self.GenEOV0.mumpsCntl3=}')
+                print(f'{self.GenEOV0.verbose=}')
                 print(f'{self.GenEOV0.gathered_nsharp=}')
-                print(f'{self.GenEOV0.gathered_nflat=}') 
+                print(f'{self.GenEOV0.gathered_nflat=}')
                 #print(f'{self.GenEOV0.gathered_dimKerMs=}')
                 #print(f'{np.array(self.GenEOV0.gathered_Lambdasharp)=}')
                 #print(f'{np.array(self.GenEOV0.gathered_Lambdaflat)=}')
             print(f'### info about the preconditioner for Apos ###')
-            print(f'{self.proj2.V0_is_global=}') 
+            print(f'{self.proj2.V0_is_global=}')
             if(self.proj2.V0_is_global == False):
-                print(f'{self.proj2.gathered_dimV0s=}') 
+                print(f'{self.proj2.gathered_dimV0s=}')
             if self.GenEO == True:
-                print(f'global dim V0 for Apos = {self.proj2.dim} = ({np.sum(self.gathered_nneg)} from Vneg ) + ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes)) + ({np.sum(self.GenEOV0.gathered_nsharp)} from GenEO_eigmax) + ({np.sum(self.GenEOV0.gathered_nflat) } from GenEO_eigmin)') 
+                print(f'global dim V0 for Apos = {self.proj2.dim} = ({np.sum(self.gathered_nneg)} from Vneg ) + ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes)) + ({np.sum(self.GenEOV0.gathered_nsharp)} from GenEO_eigmax) + ({np.sum(self.GenEOV0.gathered_nflat) } from GenEO_eigmin)')
             else:
-                print(f'global dim V0 for Apos = {np.sum(self.proj2.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes))') 
-            if self.compute_ritz_apos and self.ritz_eigs_apos != []:
-                print(f'Estimated kappa(H2 Apos) = {self.ritz_eigs_apos.max()/self.ritz_eigs_apos.min() }; with lambdamin = {self.ritz_eigs_apos.min()} and   lambdamax = {self.ritz_eigs_apos.max()}')   
+                print(f'global dim V0 for Apos = {np.sum(self.proj2.gathered_dimV0s)} = ({np.sum(self.minV0.gathered_dim)} from Ker(Atildes))')
+            if self.compute_ritz_apos and self.ritz_eigs_apos is not None:
+                print(f'Estimated kappa(H2 Apos) = {self.ritz_eigs_apos.max()/self.ritz_eigs_apos.min() }; with lambdamin = {self.ritz_eigs_apos.min()} and   lambdamax = {self.ritz_eigs_apos.max()}')
 
             print('#############################')
-            self.savetofile() 
+            self.savetofile()
 
     def savetofile(self):
         if mpi.COMM_WORLD.rank == 0:
-            np.savez(f'{self.test_case}_init',
+            np.savez(f'{self.test_case}/init',
             switchtoASM        = self.switchtoASM,
             verbose            = self.verbose,
             GenEO              = self.GenEO,
@@ -1128,7 +1129,7 @@ class PCNew:
             viewminV0          = self.viewminV0,
             compute_ritz_apos  = self.compute_ritz_apos,
             mult_max           = self.mult_max,
-            gathered_ns        = self.gathered_ns, 
+            gathered_ns        = self.gathered_ns,
             gathered_nints     = self.gathered_nints,
             gathered_Gammas    = self.gathered_Gammas,
             nGamma             = self.nGamma,
@@ -1140,13 +1141,13 @@ class PCNew:
             minV0_gathered_dim = self.minV0.gathered_dim,
             ritz_eigs_Apos     = self.ritz_eigs_apos ,
             sum_nneg = np.sum(self.gathered_nneg),
-            proj2_V0_is_global = self.proj2.V0_is_global, 
-            proj2_gathered_dimV0s = np.asarray(self.proj2.gathered_dimV0s), 
-            proj2_dimV0 = np.sum(self.proj2.gathered_dimV0s), 
-            proj2_sum_dimminV0 = np.sum(self.minV0.gathered_dim) , 
+            proj2_V0_is_global = self.proj2.V0_is_global,
+            proj2_gathered_dimV0s = np.asarray(self.proj2.gathered_dimV0s),
+            proj2_dimV0 = np.sum(self.proj2.gathered_dimV0s),
+            proj2_sum_dimminV0 = np.sum(self.minV0.gathered_dim) ,
             )
             if self.GenEO == True:
-                np.savez(f'{self.test_case}_GenEO',
+                np.savez(f'{self.test_case}/GenEO',
                 GenEOV0_tau_eigmax      = self.GenEOV0.tau_eigmax,
                 GenEOV0_tau_eigmin      = self.GenEOV0.tau_eigmin,
                 GenEOV0_eigmax          = self.GenEOV0.eigmax,
@@ -1260,9 +1261,9 @@ class invRsAposRsts_ctx(object):
         self.ksp_Matwood.setType('preonly')
         self.pc = self.ksp_Matwood.getPC()
         self.pc.setType('cholesky')
-        self.gamma, _ = self.Matwood.getVecs()  
+        self.gamma, _ = self.Matwood.getVecs()
         self.alpha = self.gamma.duplicate()
-        
+
     def mult(self, mat, x, y):
         self.ksp_As.solve(x,y)
         for i, vec in enumerate(self.AsinvRsVnegs):

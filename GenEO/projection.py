@@ -67,7 +67,7 @@ class minimal_V0(object):
         print('###')
         print(f'view of minimal_V0 in Subdomain {mpi.COMM_WORLD.rank}')
         if mpi.COMM_WORLD.rank == 0:
-            print(f'{self.mumpsCntl3=}') 
+            print(f'{self.mumpsCntl3=}')
             print(f'{self.labs=}')
         if (self.ksp_Atildes.pc.getFactorSolverType() == 'mumps'):
             print(f'dim(Ker(Atildes)) = {self.nrb=}')
@@ -173,13 +173,13 @@ class GenEO_V0(object):
             else:
                 self.Lambda_GenEO_eigmin = []
                 self.n_GenEO_eigmin = 0
-                self.dimKerMs = [] 
+                self.dimKerMs = []
                 if self.verbose:
                     PETSc.Sys.Print('This is BNN so eigmin = 1, no eigenvalue problem will be solved for eigmin', comm=mpi.COMM_WORLD)
         else:
             self.Lambda_GenEO_eigmin = []
             self.n_GenEO_eigmin = 0
-            self.dimKerMs = [] 
+            self.dimKerMs = []
             if self.verbose:
                 PETSc.Sys.Print('Skip GenEO for eigmin as user specified non positive eigmin and taueigmin', comm=mpi.COMM_WORLD)
 
@@ -221,20 +221,20 @@ class GenEO_V0(object):
                 PETSc.Sys.Print('WARNING: The largest eigenvalue computed for GenEO_eigmax in subdomain {} is {} < the threshold which is {}. Consider setting PCBNN_GenEO_nev to something larger than {}'.format(mpi.COMM_WORLD.rank, eps.getEigenvalue(eps.getConverged() - 1), tauGenEO_eigmax, eps.getConverged()), comm=self.comm)
 
             self.Lambda_GenEO_eigmax = []
-            self.n_GenEO_eigmax = 0 
+            self.n_GenEO_eigmax = 0
             for i in range(min(eps.getConverged(),self.maxev)):
                 tmp = eps.getEigenvalue(i)
                 if(abs(tmp)<tauGenEO_eigmax): #TODO tell slepc that the eigenvalues are real
                     V0s.append(self.works.duplicate())
                     labs.append(f'\lambda_{i}^\sharp = {tmp}')
-                    self.Lambda_GenEO_eigmax.append(tmp) #only for viewing 
+                    self.Lambda_GenEO_eigmax.append(tmp) #only for viewing
                     eps.getEigenvector(i,V0s[-1])
                     if self.verbose:
                         PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {}'.format(i, mpi.COMM_WORLD.rank, tmp) , comm=self.comm)
 
-                    self.n_GenEO_eigmax += 1 
+                    self.n_GenEO_eigmax += 1
                 else:
-                    self.Lambda_GenEO_eigmax.append(tmp)  #only for viewing 
+                    self.Lambda_GenEO_eigmax.append(tmp)  #only for viewing
                     if self.verbose:
                         PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamax in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, tmp, tauGenEO_eigmax), comm=self.comm)
 
@@ -258,7 +258,7 @@ class GenEO_V0(object):
         """
         if tauGenEO_eigmin > 0:
             #to compute the smallest eigenvalues of the preconditioned matrix, Ms must be factorized
-            if self.ksp_Ms == []: 
+            if self.ksp_Ms == []:
                 tempksp = PETSc.KSP().create(comm=PETSc.COMM_SELF)
                 tempksp.setOperators(self.Ms)
                 tempksp.setType('preonly')
@@ -305,7 +305,7 @@ class GenEO_V0(object):
             eps.solve()
             if eps.getConverged() < self.nev:
                 PETSc.Sys.Print('WARNING: Only {} eigenvalues converged for GenEO_eigmin in subdomain {} whereas {} were requested'.format(eps.getConverged(), mpi.COMM_WORLD.rank, self.nev), comm=self.comm)
-            self.n_GenEO_eigmin = 0 
+            self.n_GenEO_eigmin = 0
             self.Lambda_GenEO_eigmin = []
             for i in range(min(eps.getConverged(),self.maxev)):
                 tmp = eps.getEigenvalue(i)
@@ -322,24 +322,25 @@ class GenEO_V0(object):
                     if self.verbose:
                         PETSc.Sys.Print('GenEO eigenvalue number {} for lambdamin in subdomain {}: {} <-- not selected (> {})'.format(i, mpi.COMM_WORLD.rank, eps.getEigenvalue(i), tauGenEO_eigmin), comm=self.comm)
             self.eps_eigmin=eps #the only reason for this line is to make sure self.ksp_Atildes and hence PCBNN.ksp is not destroyed
+
     def view(self):
         print('###')
         print(f'view of GenEO in Subdomain {mpi.COMM_WORLD.rank}')
         if mpi.COMM_WORLD.rank == 0:
-            print(f'{self.tau_eigmax=}') 
-            print(f'{self.tau_eigmin=}') 
-            print(f'{self.eigmax=}') 
-            print(f'{self.eigmin=}') 
-            print(f'{self.nev=}') 
-            print(f'{self.maxev=}') 
-            print(f'{self.mumpsCntl3=}') 
-            print(f'{self.verbose=}') 
-            print(f'{self.mult_max=}') 
+            print(f'{self.tau_eigmax=}')
+            print(f'{self.tau_eigmin=}')
+            print(f'{self.eigmax=}')
+            print(f'{self.eigmin=}')
+            print(f'{self.nev=}')
+            print(f'{self.maxev=}')
+            print(f'{self.mumpsCntl3=}')
+            print(f'{self.verbose=}')
+            print(f'{self.mult_max=}')
             print(f'Additive Schwarz ? {(self.Atildes == self.As)}')
             print(f'Neumann Neumann ? {(self.Atildes == self.Ms)}')
-        print(f'{self.Lambda_GenEO_eigmax=}')    
+        print(f'{self.Lambda_GenEO_eigmax=}')
         print(f'{self.n_GenEO_eigmax=}')
-        print(f'{self.dimKerMs=}') 
+        print(f'{self.dimKerMs=}')
         print(f'{self.Lambda_GenEO_eigmin=}')
         print(f'{self.n_GenEO_eigmin=}')
         print(f'{self.labs=}')
@@ -429,7 +430,7 @@ class coarse_operators(object):
                 self.work.set(0)
                 self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
             else:
-                self.work = vec.copy()  
+                self.work = vec.copy()
             #debug1 = np.sqrt(self.work.dot(self.work))
             #debug4 = self.work.norm()
             #debug3 = np.sqrt(self.works.dot(self.works))
@@ -607,7 +608,7 @@ class coarse_operators(object):
         else:
             for i, vec in enumerate(self.V0):
                 self.gamma[i] = vec.dot(x)
-            
+
         self.ksp_Delta.solve(self.gamma, alpha)
 
         for i in range(len(self.V0)):
@@ -616,8 +617,8 @@ class coarse_operators(object):
         if mpi.COMM_WORLD.rank == 0:
             print('###')
             print(f'view of coarse_operators')# in Subdomain {mpi.COMM_WORLD.rank}')
-            print(f'{self.V0_is_global=}') 
-            print(f'{self.gathered_dimV0s=}') 
+            print(f'{self.V0_is_global=}')
+            print(f'{self.gathered_dimV0s=}')
 
 
 class projection(object):
