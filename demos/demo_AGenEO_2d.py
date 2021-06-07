@@ -17,12 +17,14 @@ def rhs(coords, rhs):
     n = rhs.shape
     rhs[..., 1] = -9.81
 
-def save_json(path, E1, E2, stripe_nb, ksp, pc, ritz):
+def save_json(path, E1, E2, Lx, Ly, stripe_nb, ksp, pc, ritz):
     results = {}
 
     if mpi.COMM_WORLD.rank == 0:
         results['E1'] = E1
         results['E2'] = E2
+        results['Lx'] = Lx
+        results['Ly'] = Ly
         results['stripe_nb'] = stripe_nb
         results['gathered_ns'] = pc.gathered_ns
         results['gathered_Gammas'] = pc.gathered_Gammas
@@ -48,7 +50,7 @@ def save_json(path, E1, E2, stripe_nb, ksp, pc, ritz):
             results['GenEOV0_gathered_dimKerMs'] = pc.GenEOV0.gathered_dimKerMs
             print(pc.GenEOV0.gathered_Lambdasharp)
             results['GenEOV0_gathered_Lambdasharp'] = [[(d.real, d.imag) for d in l] for l in pc.GenEOV0.gathered_Lambdasharp]
-            results['GenEOV0_gathered_Lambdaflat'] = pc.GenEOV0.gathered_Lambdaflat
+            results['GenEOV0_gathered_Lambdaflat'] =  [[(d.real, d.imag) for d in l] for l in pc.GenEOV0.gathered_Lambdaflat]
             results['sum_nsharp'] = float(np.sum(pc.GenEOV0.gathered_nsharp))
             results['sum_nflat'] = float(np.sum(pc.GenEOV0.gathered_nflat))
             results['sum_dimKerMs'] = float(np.sum(pc.GenEOV0.gathered_dimKerMs))
@@ -123,7 +125,7 @@ da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly)
 da.setMatType(PETSc.Mat.Type.IS)
 
-def lame_coeff(x, y, v1, v2, stripe_nb):
+def lame_coeff(x, y, v1, v2, stripe_nb, Ly):
     if stripe_nb == 0:
         if mpi.COMM_WORLD.rank == 0:
             print(f'Test number {stripe_nb} - no stripes E = {E1}')
@@ -131,15 +133,17 @@ def lame_coeff(x, y, v1, v2, stripe_nb):
     elif stripe_nb == 1:
         if mpi.COMM_WORLD.rank == 0:
             print(f'Test number {stripe_nb} - one stripe')
-        mask = np.logical_and(1./7<=y, y<=2./7)
+        mask = np.logical_and(1./7<=y-np.floor(y), y-np.floor(y)<=2./7)
+        #mask = np.logical_and(1./7<=y, y<=2./7)
     elif stripe_nb == 2:
         if mpi.COMM_WORLD.rank == 0:
             print(f'Test number {stripe_nb} - two stripes')
-        mask= np.logical_or(np.logical_and(1./7<=y, y<=2./7),np.logical_and(3./7<=y, y<=4./7))
+        #mask= np.logical_or(np.logical_and(1./7<=y, y<=2./7),np.logical_and(3./7<=y, y<=4./7))
+        mask= np.logical_or(np.logical_and(1./7<=y-np.floor(y), y-np.floor(y)<=2./7),np.logical_and(3./7<=y-np.floor(y), y-np.floor(y)<=4./7))
     elif stripe_nb == 3:
         if mpi.COMM_WORLD.rank == 0:
             print(f'Test number {stripe_nb} - three stripes')
-        mask= np.logical_or(np.logical_and(1./7<=y, y<=2./7),np.logical_and(3./7<=y, y<=4./7), np.logical_and(5./7<=y, y<=6./7))
+        mask= np.logical_or(np.logical_and(1./7<=y-np.floor(y), y-np.floor(y)<=2./7),np.logical_and(3./7<=y-np.floor(y), y-np.floor(y)<=4./7), np.logical_and(5./7<=y-np.floor(y), y-np.floor(y)<=6./7))
     else:
         if mpi.COMM_WORLD.rank == 0:
             print(f'Test number {stripe_nb} is not implemented, instead I set E={E2}')
@@ -150,8 +154,8 @@ def lame_coeff(x, y, v1, v2, stripe_nb):
     return output
 
 # non constant Young's modulus and Poisson's ratio
-E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2,stripe_nb))
-nu = buildCellArrayWithFunction(da, lame_coeff, (nu1,nu2,stripe_nb))
+E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2,stripe_nb,Ly))
+nu = buildCellArrayWithFunction(da, lame_coeff, (nu1,nu2,stripe_nb,Ly))
 
 lamb = (nu*E)/((1+nu)*(1-2*nu))
 mu = .5*E/(1+nu)
@@ -281,7 +285,7 @@ if mpi.COMM_WORLD.rank == 0:
     if computeRitz:
         print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')
 
-save_json(test_case, E1, E2, stripe_nb, ksp, pcbnn, Ritz)
+save_json(test_case, E1, E2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
 
 #if mpi.COMM_WORLD.rank == 0:
 #    print('compare with MUMPS global solution')

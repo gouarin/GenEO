@@ -8,26 +8,26 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from io import BytesIO
 
-def get_cell_value(y, E1, E2, stripe_nb):
+def get_cell_value(y, E1, E2, stripe_nb,Ly):
     if stripe_nb == 0:
         return E2
     elif stripe_nb == 1:
-        if 1./7 <= y <= 2./7:
+        if 1./7 <= y - np.floor(y) <= 2./7:
             return E1
         else:
             return E2
     elif stripe_nb == 2:
-        if (1./7 <= y <= 2./7) or (3./7 <= y <= 4./7):
+        if (1./7 <= y - np.floor(y) <= 2./7) or (3./7 <= y  - np.floor(y) <= 4./7):
             return E1
         else:
             return E2
     elif stripe_nb == 3:
-        if (1./7 <= y <= 2./7) or (3./7 <= y <= 4./7) or (5./7 <= y <= 6./7):
+        if (1./7 <= y  - np.floor(y) <= 2./7) or (3./7 <= y  - np.floor(y) <= 4./7) or (5./7 <= y  - np.floor(y) <= 6./7):
             return E1
         else:
             return E2
 
-def plot_coarse_vec(path, data, E1, E2, stripe_nb):
+def plot_coarse_vec(path, data, E1, E2, stripe_nb,Ly):
     scale = 0.5
     for k, v in data.items():
         ncol = int(np.ceil(np.sqrt(len(v))))
@@ -69,7 +69,7 @@ def plot_coarse_vec(path, data, E1, E2, stripe_nb):
                     for ic in range(grid.n_cells):
                         cell = grid.cell_points(ic)
                         center_y = .5*(cell[0, 1] + cell[1, 1])
-                        E[ic] = get_cell_value(center_y, E1, E2, stripe_nb)
+                        E[ic] = get_cell_value(center_y, E1, E2, stripe_nb,Ly)
 
                     grid.cell_arrays.update({'E': E})
 
@@ -139,7 +139,7 @@ for (dirpath, dirnames, filenames) in os.walk(path):
         with open(os.path.join(dirpath, 'results.json')) as json_file:
             results = json.load(json_file)
 
-        # plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'])
+        plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
         plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
 
         ax.plot(results['precresiduals'])
@@ -156,4 +156,4 @@ ax.set_ylabel('residual')
 ax.set_yscale('log')
 fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
 
-plot_condition_number(path, condition)
+#plot_condition_number(path, condition)

@@ -54,12 +54,12 @@ def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigm
     # os.system(f"mpiexec -np {ndomains} --oversubscribe python ./demo_AGenEO_2d.py -options_file options.txt")
 
 
-case = 2
+case = 1
 
 if case == 1:
     nxdomains= [3]
     nydomains= [3]
-    n = [10]#, 42]
+    n = [14]#, 42]
 
     E1 = [1e10]
     E2 = [1e6]
@@ -86,14 +86,14 @@ elif case == 3:
     stripe_nb = [1, 2, 3]
     n = [22]#, 42]
 elif case == 4:
-    nxdomains= [4, 8]
-    nydomains= [1, 1]
-    E1 = [1e6, 1e8, 1e10, 1e12, 1e6,  1e6,  1e6]
-    E2 = [1e6, 1e6,  1e6,  1e6, 1e8, 1e10, 1e12]
+    nxdomains= [3]
+    nydomains= [3]
+    E1 = [1e10]
+    E2 = [1e6]
     neigs = 10
     taueigmax = [0.1]
-    stripe_nb = [1, 2, 3]
-    n = [22]#, 42]
+    stripe_nb = [3]
+    n = [15]#, 42]
 
 nu1 = [0.3]*len(E1)
 nu2 = [0.3]*len(E1)
@@ -103,17 +103,17 @@ if case < 4:
                     ('pcbnn', "-PCNew False \n-PCBNN_switchtoASM False \n-PCBNN_CoarseProjection True"),
     ]
 else:
-    PCNew_options = [('pcnew', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
-                     ('pcnew', "-PCNew True \n-PCNew_switchtoASM True \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
-                     ('pcnew', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
-                     ('pcnew', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection False \n-PCNew_H3CoarseProjection False"),
-                     ('pcnew', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
-                     ('pcnew', "-PCNew True \n-PCNew_switchtoASM True \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
-                     ('pcnew', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
-                     ('pcnew', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection False \n-PCNew_H3CoarseProjection True"),
-                     ('pcbnn', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection True"),
-                     ('pcbnn', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection False"),
-                     ('pcbnn', "-PCNew False \n-PCBNN_switchtoASM False \n-PCBNN_CoarseProjection True"),
+    PCNew_options = [('pcnew_NNhyb_ad', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
+                     ('pcnew_AShyb_ad', "-PCNew True \n-PCNew_switchtoASM True \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
+                     ('pcnew_ASposhyb_ad', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
+                     ('pcnew_ASposad_ad', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection False \n-PCNew_H3CoarseProjection False"),
+                     ('pcnew_NNhyb_hyb', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
+                     ('pcnew_AShyb_hyb', "-PCNew True \n-PCNew_switchtoASM True \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
+                     ('pcnew_ASposhyb_hyb', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
+                     ('pcnew_ASposad_hyb', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection False \n-PCNew_H3CoarseProjection True"),
+                     ('pcbnn_AShyb', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection True"),
+                     ('pcbnn_ASad', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection False"),
+                     ('pcbnn_AShyb', "-PCNew False \n-PCBNN_switchtoASM False \n-PCBNN_CoarseProjection True"),
     ]
 
 if not os.path.exists('output.d'):
@@ -126,6 +126,6 @@ for nn in n:
             for s in stripe_nb:
                 for tau in taueigmax:
                     for i in range(len(E1)):
-                        path = f'output.d/case_{case}_{name}_ ' + '_'.join([str(el) for el in [nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau]])
+                        path = f'output.d/case_{case}_{name}_' + '_'.join([str(el) for el in [nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau]])
                         run_simu(path, nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau, neigs, option)
                         id += 1
