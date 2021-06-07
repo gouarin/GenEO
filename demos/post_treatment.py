@@ -102,10 +102,9 @@ def plot_condition_number(path, condition):
 
     for k, v in condition.items():
         data = np.asarray(v)
-        data.sort(axis=0)
-        print(data)
-        # ax.plot(data[:, 1], data[:, 2], label=k, marker='.')
-        ax.plot(data[:, 0], data[:, 2], label=k, marker='.')
+        index = np.argsort(data[:, 0])
+        data = data[index]
+        ax.plot(data[:, 1], data[:, 2], label=k, marker='.')
 
     ax.set_xlabel('Coarse space size')
     ax.set_ylabel('Condition number (log scale)')
@@ -141,7 +140,7 @@ for (dirpath, dirnames, filenames) in os.walk(path):
             results = json.load(json_file)
 
         # plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'])
-        # plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+        plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
 
         ax.plot(results['precresiduals'])
 
