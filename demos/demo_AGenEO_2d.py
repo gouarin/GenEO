@@ -28,9 +28,16 @@ def save_json(path, E1, E2, stripe_nb, ksp, pc, ritz):
         results['gathered_Gammas'] = pc.gathered_Gammas
         results['nGamma'] = pc.nglob - pc.nints
         results['nglob'] = pc.nglob
-        if hasattr(pc.proj, 'gathered_dimV0s'):
-            results['gathered_dimV0s'] = pc.proj.gathered_dimV0s
-            results['V0dim'] = float(np.sum(pc.proj.gathered_dimV0s))
+
+        if hasattr(pc, 'proj2'):
+            proj = pc.proj2
+        else:
+            proj = pc.proj
+
+        if hasattr(proj, 'gathered_dimV0s'):
+            results['gathered_dimV0s'] = proj.gathered_dimV0s
+            results['V0dim'] = float(np.sum(proj.gathered_dimV0s))
+
         results['minV0_gathered_dim']  = pc.minV0.gathered_dim
         results['minV0dim'] = float(np.sum(pc.minV0.gathered_dim))
         results['gathered_labs'] =  pc.gathered_labs
@@ -65,6 +72,9 @@ def save_json(path, E1, E2, stripe_nb, ksp, pc, ritz):
             results['lambdamin'] = (rmin.real, rmin.imag)
             results['lambdamax'] = (rmax.real, rmax.imag)
             results['kappa'] = (kappa.real, kappa.imag)
+
+        results['taueigmax'] = pc.GenEOV0.tau_eigmax
+        results['nev'] = pc.GenEOV0.nev
 
         with open(f'{path}/results.json', 'w') as f:
             json.dump(results, f, indent=4, sort_keys=True)

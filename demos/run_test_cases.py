@@ -3,7 +3,7 @@ import sys
 import subprocess
 from textwrap import dedent
 
-def run_simu(path, ndomains, n, E1, E2, nu1, nu2, stripe_nb, option):
+def run_simu(path, ndomains, n, E1, E2, nu1, nu2, stripe_nb, taueigmax, neigs, option):
 
     if not os.path.exists(path):
         os.mkdir(path)
@@ -24,8 +24,9 @@ def run_simu(path, ndomains, n, E1, E2, nu1, nu2, stripe_nb, option):
         -PCBNN_GenEO True
         -PCNew_GenEO True
         -PCNew_ComputeRitzApos True
-        -PCBNN_GenEO_taueigmax 0.1
+        -PCBNN_GenEO_taueigmax {taueigmax}
         -PCBNN_GenEO_taueigmin 0.1
+        -PCBNN_GenEO_nev {neigs}
         -ksp_Apos_ksp_converged_reason
         -ksp_Apos_ksp_rtol 1e-10
         -computeRitz True
@@ -51,16 +52,27 @@ def run_simu(path, ndomains, n, E1, E2, nu1, nu2, stripe_nb, option):
         f.write(result.stdout.decode('utf-8'))
     # os.system(f"mpiexec -np {ndomains} --oversubscribe python ./demo_AGenEO_2d.py -options_file options.txt")
 
-ndomains= [4, 8]
 
-E1 = [1e6, 1e8, 1e10, 1e12, 1e6,  1e6,  1e6]
-E2 = [1e6, 1e6,  1e6,  1e6, 1e8, 1e10, 1e12]
+ndomains= [4]
+E1 = [1e10]
+E2 = [1e6]
+neigs = 30
+taueigmax = [0, 1e-3, 1e-2, 5e-2, 1e-1, 0.2, 0.5]
+stripe_nb = [3]
+
+
+# ndomains= [4, 8]
+# E1 = [1e6, 1e8, 1e10, 1e12, 1e6,  1e6,  1e6]
+# E2 = [1e6, 1e6,  1e6,  1e6, 1e8, 1e10, 1e12]
+# neigs = 10
+# taueigmax = [0.1]
+# stripe_nb = [1, 2, 3]
+
 nu1 = [0.3]*len(E1)
 nu2 = [0.3]*len(E1)
 
-stripe_nb = [1, 2, 3]
 
-n = [21]#, 42]
+n = [22]#, 42]
 
 PCNew_options = ["-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False",
                 #  "-PCNew True \n-PCNew_switchtoASM True \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False",
@@ -83,8 +95,9 @@ for nn in n:
     for nd in ndomains:
         for io, option in enumerate(PCNew_options):
             for s in stripe_nb:
-                for i in range(len(E1)):
-                    pc = 'pcbnn_' if io == 1 else 'pcnew_'
-                    path = 'output.d/' + pc + '_'.join([str(el) for el in [nd, nn, E1[i], E2[i], nu1[i], nu2[i], s]])
-                    run_simu(path, nd, nn, E1[i], E2[i], nu1[i], nu2[i], s, option)
-                    id += 1
+                for tau in taueigmax:
+                    for i in range(len(E1)):
+                        pc = 'pcbnn_' if io == 1 else 'pcnew_'
+                        path = 'output.d/' + pc + '_'.join([str(el) for el in [nd, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau]])
+                        run_simu(path, nd, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau, neigs, option)
+                        id += 1

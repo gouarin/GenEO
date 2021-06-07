@@ -5,6 +5,7 @@ import os
 import re
 import json
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 from io import BytesIO
 
 def get_cell_value(y, E1, E2, stripe_nb):
@@ -90,16 +91,39 @@ def plot_eigenvalues(path, eigs):
     fig, ax = plt.subplots()
     for i, eig in enumerate(eigs):
         ax.scatter(i*np.ones_like(eig), eig)
-    ax.set_xlabel('subdomain number')
-    ax.set_ylabel('generalized eigenvalues')
+    ax.set_xlabel('Subdomain number')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_ylabel('Generalized eigenvalues (log scale)')
     ax.set_yscale('log')
     fig.savefig(os.path.join(path, 'eigenvalues.png'), dpi=300)
+
+def plot_condition_number(path, condition):
+    fig, ax = plt.subplots()
+
+    for k, v in condition.items():
+        data = np.asarray(v)
+        data.sort(axis=0)
+        print(data)
+        # ax.plot(data[:, 1], data[:, 2], label=k, marker='.')
+        ax.plot(data[:, 0], data[:, 2], label=k, marker='.')
+
+    ax.set_xlabel('Coarse space size')
+    ax.set_ylabel('Condition number (log scale)')
+    ax.set_yscale('log')
+    ax.legend()
+    fig.savefig(os.path.join(path, 'condition_number.png'), dpi=300)
 
 regexp = re.compile('coarse_vec_(\d+)_(\d+).h5')
 
 path = 'output.d'
 
 fig, ax = plt.subplots()
+
+condition = {
+    'pcbnn': [],
+    'pcnew': [],
+    # 'pcnew_neg': []
+}
 
 for (dirpath, dirnames, filenames) in os.walk(path):
     if 'results.json' in filenames:
@@ -116,12 +140,21 @@ for (dirpath, dirnames, filenames) in os.walk(path):
         with open(os.path.join(dirpath, 'results.json')) as json_file:
             results = json.load(json_file)
 
-        plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'])
-        plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+        # plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'])
+        # plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
 
         ax.plot(results['precresiduals'])
+
+        if os.path.basename(dirpath).split('_')[0] == 'pcbnn':
+            condition['pcbnn'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+        else:
+            condition['pcnew'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+            # condition['pcnew_neg'].append((results['taueigmax'], results['sum_gathered_nneg'], results['kappa'][0]))
+
 
 ax.set_xlabel('iteration number')
 ax.set_ylabel('residual')
 ax.set_yscale('log')
 fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
+
+plot_condition_number(path, condition)
