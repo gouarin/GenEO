@@ -144,7 +144,7 @@ for (dirpath, dirnames, filenames) in os.walk(path):
 
         ax.plot(results['precresiduals'])
 
-        if os.path.basename(dirpath).split('_')[0] == 'pcbnn':
+        if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
             condition['pcbnn'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
         else:
             condition['pcnew'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
@@ -156,4 +156,4 @@ ax.set_ylabel('residual')
 ax.set_yscale('log')
 fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
 
-#plot_condition_number(path, condition)
+plot_condition_number(path, condition)
