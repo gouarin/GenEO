@@ -7,6 +7,7 @@ import json
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from io import BytesIO
+import pandas as pd
 
 def get_cell_value(y, E1, E2, stripe_nb,Ly):
     if stripe_nb == 0:
@@ -113,6 +114,7 @@ def plot_condition_number(path, condition):
     fig.savefig(os.path.join(path, 'condition_number.png'), dpi=300)
 
 regexp = re.compile('coarse_vec_(\d+)_(\d+).h5')
+regexp_case_4 = re.compile('case_4_*')
 
 path = 'output.d'
 
@@ -124,9 +126,10 @@ condition = {
     # 'pcnew_neg': []
 }
 
+dfs = []
+
 for (dirpath, dirnames, filenames) in os.walk(path):
     if 'results.json' in filenames:
-        print(dirpath)
         data = {}
         for f in filenames:
             res = regexp.search(f)
@@ -139,10 +142,23 @@ for (dirpath, dirnames, filenames) in os.walk(path):
         with open(os.path.join(dirpath, 'results.json')) as json_file:
             results = json.load(json_file)
 
-        plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
-        plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+        res_case_4 = regexp_case_4.search(os.path.split(dirpath)[-1])
 
-        ax.plot(results['precresiduals'])
+        if res_case_4:
+            name = open(os.path.join(dirpath, 'name.txt')).read()
+            data = {'name': name,
+                    'kappa': results['kappa'][0],
+                    'labdamin': results['lambdamin'][0],
+                    'lambdamax': results['lambdamax'][0],
+                    'V0dim': int(results['V0dim']),
+                    # 'vneg': results['vneg'],
+                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+            }
+            dfs.append(data)
+        # plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+        # plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+
+        # ax.plot(results['precresiduals'])
 
         if os.path.basename(dirpath).split('_')[1] == '1':
             if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
@@ -164,3 +180,5 @@ fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
 
 plot_condition_number(path, condition)
 #plot_condition_number(path, condition5)
+df = pd.DataFrame(dfs)
+print(df.to_latex())

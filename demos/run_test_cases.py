@@ -5,8 +5,7 @@ from textwrap import dedent
 
 def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigmax, Aposrtol, neigs, option):
 
-    if not os.path.exists(path):
-        os.mkdir(path)
+
     with open('options.txt', 'w') as f:
         f.writelines(dedent(f"""
         -E1 {E1}
@@ -183,5 +182,12 @@ for nn in n:
                     for rtol in Aposrtol:
                         for i in range(len(E1)):
                             path = f'output.d/case_{case}_{name}_' + '_'.join([str(el) for el in [nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau, rtol]])
-                            run_simu(path, nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau, rtol, neigs, option)
+
+                            if not os.path.exists(path):
+                                os.mkdir(path)
+
+                            with open(os.path.join(path, 'name.txt'), 'w') as f:
+                                f.write(name)
+
+                            # run_simu(path, nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau, rtol, neigs, option)
                             id += 1
