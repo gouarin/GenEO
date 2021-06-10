@@ -3,7 +3,7 @@ import sys
 import subprocess
 from textwrap import dedent
 
-def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigmax, neigs, option):
+def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigmax, Aposrtol, neigs, option):
 
     if not os.path.exists(path):
         os.mkdir(path)
@@ -28,7 +28,7 @@ def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigm
         -PCBNN_GenEO_taueigmin 0.1
         -PCBNN_GenEO_nev {neigs}
         -ksp_Apos_ksp_converged_reason
-        -ksp_Apos_ksp_rtol 1e-10
+        -ksp_Apos_ksp_rtol {Aposrtol}
         -computeRitz True
         -global_ksp_ksp_monitor_true_residual
         -global_ksp_ksp_rtol 1e-10
@@ -54,46 +54,50 @@ def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigm
     # os.system(f"mpiexec -np {ndomains} --oversubscribe python ./demo_AGenEO_2d.py -options_file options.txt")
 
 
-case = 1
+case = 4
 
 if case == 1:
     nxdomains= [3]
     nydomains= [3]
-    n = [14]#, 42]
+    n = [21]#, 42]
 
-    E1 = [1e10]
-    E2 = [1e6]
+    Aposrtol = [1e-10]
+    E1 = [1e11]
+    E2 = [1e7]
     neigs = 30
     taueigmax = [0, 1e-3, 1e-2, 5e-2, 1e-1, 0.2, 0.5]
     stripe_nb = [3]
 elif case == 2:
     nxdomains= [4]
     nydomains= [1]
-    n = [22]#, 42]
+    n = [21]#, 42]
+    Aposrtol = [1e-10]
 
-    E1 = [1e10]
-    E2 = [1e6]
+    E1 = [1e11]
+    E2 = [1e7]
     neigs = 30
     taueigmax = [0, 1e-3, 1e-2, 5e-2, 1e-1, 0.2, 0.5]
     stripe_nb = [3]
 elif case == 3:
     nxdomains= [4, 8]
     nydomains= [1, 1]
-    E1 = [1e6, 1e8, 1e10, 1e12, 1e6,  1e6,  1e6]
-    E2 = [1e6, 1e6,  1e6,  1e6, 1e8, 1e10, 1e12]
-    neigs = 10
+    Aposrtol = [1e-10]
+    E1 = [1e11, 1e11, 1e11, 1e11, 1e9,  1e7,  1e5]
+    E2 = [1e5, 1e7,  1e9,  1e11, 1e11, 1e11, 1e11]
+    neigs = 30
     taueigmax = [0.1]
     stripe_nb = [1, 2, 3]
-    n = [22]#, 42]
-elif case == 4:
+    n = [21]#, 42]
+elif case == 4: #options takes several values (see below)
     nxdomains= [3]
     nydomains= [3]
-    E1 = [1e10]
-    E2 = [1e6]
+    E1 = [1e11]
+    E2 = [1e7]
+    Aposrtol = [1e-10]
     neigs = 10
     taueigmax = [0.1]
     stripe_nb = [3]
-    n = [15]#, 42]
+    n = [14]#, 42]
 
 nu1 = [0.3]*len(E1)
 nu2 = [0.3]*len(E1)
@@ -113,7 +117,8 @@ else:
                      ('pcnew_ASposad_hyb', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection False \n-PCNew_H3CoarseProjection True"),
                      ('pcbnn_AShyb', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection True"),
                      ('pcbnn_ASad', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection False"),
-                     ('pcbnn_AShyb', "-PCNew False \n-PCBNN_switchtoASM False \n-PCBNN_CoarseProjection True"),
+                     ('pcbnn_NNhyb', "-PCNew False \n-PCBNN_switchtoASM False \n-PCBNN_CoarseProjection True"),
+                     ('pcbnn_AS_onelevel', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection False \n  PCBNN_addCoarseSolve False "),
     ]
 
 if not os.path.exists('output.d'):
@@ -125,7 +130,8 @@ for nn in n:
         for io, (name, option) in enumerate(PCNew_options):
             for s in stripe_nb:
                 for tau in taueigmax:
-                    for i in range(len(E1)):
-                        path = f'output.d/case_{case}_{name}_' + '_'.join([str(el) for el in [nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau]])
-                        run_simu(path, nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau, neigs, option)
-                        id += 1
+                    for rtol in Aposrtol:
+                        for i in range(len(E1)):
+                            path = f'output.d/case_{case}_{name}_' + '_'.join([str(el) for el in [nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau, rtol]])
+                            run_simu(path, nx, ny, nn, E1[i], E2[i], nu1[i], nu2[i], s, tau, rtol, neigs, option)
+                            id += 1

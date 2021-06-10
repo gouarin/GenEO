@@ -158,6 +158,13 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
             self.V0s = self.minV0.V0s
             self.labs = self.minV0.labs
         self.proj = coarse_operators(self.V0s,self.A,self.scatter_l2g,vlocal,self.work)
+#TODO implement better the case where no coarse projection is performed by not computing V0 at all
+        if self.addCS == False and self.projCS == False: #no coarse operation so set the size of V0 to zero
+            self.GenEO = False
+            self.minV0.nrb = 0
+            self.minV0.labs = []
+            self.minV0.mumpsCntl3= []  
+            self.proj.gathered_dimV0s=  mpi.COMM_WORLD.gather(self.minV0.nrb, root=0)
         if self.viewV0 == True:
             self.proj.view()
 

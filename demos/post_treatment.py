@@ -144,11 +144,12 @@ for (dirpath, dirnames, filenames) in os.walk(path):
 
         ax.plot(results['precresiduals'])
 
-        if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
-            condition['pcbnn'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
-        else:
-            condition['pcnew'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
-            # condition['pcnew_neg'].append((results['taueigmax'], results['sum_gathered_nneg'], results['kappa'][0]))
+        if os.path.basename(dirpath).split('_')[1] == '1':
+            if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
+                condition['pcbnn'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+            else:
+                condition['pcnew'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+                # condition['pcnew_neg'].append((results['taueigmax'], results['sum_gathered_nneg'], results['kappa'][0]))
 
 
 ax.set_xlabel('iteration number')

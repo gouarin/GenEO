@@ -1,14 +1,15 @@
 
-        -E1 10000000000.0
-        -E2 1000000.0
+        -E1 100000000000.0
+        -E2 10000000.0
         -Lx 3
         -Ly 3
         -n 14
         -stripe_nb 3
-        -test_case output.d/case_1_pcbnn_3_3_14_10000000000.0_1000000.0_0.3_0.3_3_0.5
+        -test_case output.d/case_4_pcbnn_AS_onelevel_3_3_14_100000000000.0_10000000.0_0.3_0.3_3_0.1_1e-10
         -PCNew False 
--PCBNN_switchtoASM False 
--PCBNN_CoarseProjection True
+-PCBNN_switchtoASM True 
+-PCBNN_CoarseProjection False 
+  PCBNN_addCoarseSolve False 
         -PCBNN_verbose False
         -PCBNN_GenEO_verbose False
         -PCNew_view True
@@ -16,9 +17,9 @@
         -PCBNN_GenEO True
         -PCNew_GenEO True
         -PCNew_ComputeRitzApos True
-        -PCBNN_GenEO_taueigmax 0.5
+        -PCBNN_GenEO_taueigmax 0.1
         -PCBNN_GenEO_taueigmin 0.1
-        -PCBNN_GenEO_nev 30
+        -PCBNN_GenEO_nev 10
         -ksp_Apos_ksp_converged_reason
         -ksp_Apos_ksp_rtol 1e-10
         -computeRitz True
