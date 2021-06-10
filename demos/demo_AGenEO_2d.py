@@ -17,18 +17,20 @@ def rhs(coords, rhs):
     n = rhs.shape
     rhs[..., 1] = -9.81
 
-def save_json(path, E1, E2, Lx, Ly, stripe_nb, ksp, pc, ritz):
+def save_json(path, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pc, ritz):
     results = {}
 
     if mpi.COMM_WORLD.rank == 0:
         results['E1'] = E1
         results['E2'] = E2
+        results['nu1'] = nu1
+        results['nu2'] = nu2
         results['Lx'] = Lx
         results['Ly'] = Ly
         results['stripe_nb'] = stripe_nb
         results['gathered_ns'] = pc.gathered_ns
         results['gathered_Gammas'] = pc.gathered_Gammas
-        results['nGamma'] = pc.nglob - pc.nints
+        results['nGamma'] = pc.nGamma
         results['nglob'] = pc.nglob
 
         if hasattr(pc, 'proj2'):
@@ -56,6 +58,7 @@ def save_json(path, E1, E2, Lx, Ly, stripe_nb, ksp, pc, ritz):
             results['sum_dimKerMs'] = float(np.sum(pc.GenEOV0.gathered_dimKerMs))
 
         if isinstance(pc, PCNew):
+            results['Aposrtol'] = pc.ksp_Apos.getTolerances()[0] 
             results['gathered_nneg'] = pc.gathered_nneg
             results['sum_gathered_nneg'] = float(np.sum(pc.gathered_nneg))
             if pc.compute_ritz_apos and pc.ritz_eigs_apos is not None:
@@ -112,7 +115,10 @@ nu2 = OptDB.getReal('nu2', 0.4)
 test_case = OptDB.getString('test_case', 'default')
 isPCNew = OptDB.getBool('PCNew', True)
 computeRitz  =  OptDB.getBool('computeRitz', True)
-stripe_nb = OptDB.getInt('stripe_nb', 0)
+stripe_nb = OptDB.getInt('stripe_nb', 3)
+
+#TODO: I did this just so I could save this option to json file. The variable tmp_ksp_Apos_rtol is never used
+tmp_ksp_Apos_rtol = OptDB.getReal('ksp_Apos_ksp_rtol', -1) 
 
 if mpi.COMM_WORLD.rank == 0:
     if not os.path.exists(test_case):
@@ -285,7 +291,7 @@ if mpi.COMM_WORLD.rank == 0:
     if computeRitz:
         print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')
 
-save_json(test_case, E1, E2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
+save_json(test_case, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
 
 #if mpi.COMM_WORLD.rank == 0:
 #    print('compare with MUMPS global solution')

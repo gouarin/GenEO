@@ -150,6 +150,11 @@ for (dirpath, dirnames, filenames) in os.walk(path):
             else:
                 condition['pcnew'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
                 # condition['pcnew_neg'].append((results['taueigmax'], results['sum_gathered_nneg'], results['kappa'][0]))
+        #if os.path.basename(dirpath).split('_')[1] == '5':
+        #    if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
+        #        condition5['pcbnn'].append((results['Aposrtol'], results['V0dim'], results['kappa'][0]))
+        #    else:
+        #        condition5['pcnew'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
 
 
 ax.set_xlabel('iteration number')
@@ -158,3 +163,4 @@ ax.set_yscale('log')
 fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
 
 plot_condition_number(path, condition)
+#plot_condition_number(path, condition5)
