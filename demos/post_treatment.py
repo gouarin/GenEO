@@ -114,15 +114,22 @@ def plot_condition_number(path, condition):
     fig.savefig(os.path.join(path, 'condition_number.png'), dpi=300)
 
 regexp = re.compile('coarse_vec_(\d+)_(\d+).h5')
+regexp_case_9 = re.compile('case_9_*')
+regexp_case_8 = re.compile('case_8_*')
+regexp_case_7 = re.compile('case_7_*')
+regexp_case_6 = re.compile('case_6_*')
+regexp_case_5 = re.compile('case_5_*')
 regexp_case_4 = re.compile('case_4_*')
+regexp_case_2 = re.compile('case_2_*')
+regexp_case_3 = re.compile('case_3_*')
 
 path = 'output.d'
 
 fig, ax = plt.subplots()
 
 condition = {
-    'pcbnn': [],
-    'pcnew': [],
+    'classical GenEO': [],
+    'AWG': [],
     # 'pcnew_neg': []
 }
 
@@ -142,35 +149,114 @@ for (dirpath, dirnames, filenames) in os.walk(path):
         with open(os.path.join(dirpath, 'results.json')) as json_file:
             results = json.load(json_file)
 
-        res_case_4 = regexp_case_4.search(os.path.split(dirpath)[-1])
 
-        if res_case_4:
-            name = open(os.path.join(dirpath, 'name.txt')).read()
-            data = {'name': name,
-                    'kappa': results['kappa'][0],
-                    'labdamin': results['lambdamin'][0],
-                    'lambdamax': results['lambdamax'][0],
-                    'V0dim': int(results['V0dim']),
-                    # 'vneg': results['vneg'],
-                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
-            }
-            dfs.append(data)
-        # plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
-        # plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+#####CASE 2
+#        res_case_2 = regexp_case_2.search(os.path.split(dirpath)[-1])
+#        if res_case_2:
+#            #name = open(os.path.join(dirpath, 'name.txt')).read()
+#            data = {'nu': results['nu1'],
+#                    'kappa': results['kappa'][0],
+#                    'iter': len(results['precresiduals']),
+#                    'lambdamin': results['lambdamin'][0],
+#                    'lambdamax': results['lambdamax'][0],
+#                    'V0dim': int(results['V0dim']),
+#                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+#            }
+#            dfs.append(data)
+#            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+#            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+#####END CASE 2
+#####CASE 3
+        #res_case_3 = regexp_case_3.search(os.path.split(dirpath)[-1])
+        #if res_case_3:
+        #    name = open(os.path.join(dirpath, 'name.txt')).read()
+        #    data = {' ': name,
+        #            'E_1': results['E1'],
+        #            'E_2': results['E2'],
+        #            'kappa': results['kappa'][0],
+        #            'iter': len(results['precresiduals']),
+        #            'lambdamin': results['lambdamin'][0],
+        #            'lambdamax': results['lambdamax'][0],
+        #            'V0dim': int(results['V0dim']),
+        #            'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+        #    }
+        #    dfs.append(data)
+        #    #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+        #    plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+#####END CASE 3
+###### I deleted  CASE 4 by accident, it is in Loic's commit from June 10th 2021
 
-        # ax.plot(results['precresiduals'])
-
-        if os.path.basename(dirpath).split('_')[1] == '1':
+#######CASE 1
+#        if os.path.basename(dirpath).split('_')[1] == '1':
+#            if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
+#                condition['classical GenEO'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+#            else:
+#                condition['AWG'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+######## END CASE 1
+#######CASE 9
+        if os.path.basename(dirpath).split('_')[1] == '9':
             if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
-                condition['pcbnn'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+                condition['classical GenEO'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
             else:
-                condition['pcnew'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
-                # condition['pcnew_neg'].append((results['taueigmax'], results['sum_gathered_nneg'], results['kappa'][0]))
-        #if os.path.basename(dirpath).split('_')[1] == '5':
-        #    if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
-        #        condition5['pcbnn'].append((results['Aposrtol'], results['V0dim'], results['kappa'][0]))
-        #    else:
-        #        condition5['pcnew'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+                condition['AWG'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+######## END CASE 9
+#####CASE 5 and 8
+#        res_case_5 = regexp_case_5.search(os.path.split(dirpath)[-1])
+#        res_case_8 = regexp_case_8.search(os.path.split(dirpath)[-1])
+#        if res_case_5 or res_case_8:
+#            name = open(os.path.join(dirpath, 'name.txt')).read()
+#            data = {' ': name,
+#                    'nu': results['nu1'],
+#                    'rtol': results['Aposrtol'],
+#                    'kappa': results['kappa'][0],
+#                    'iter': len(results['precresiduals']),
+#                    'lambdamin': results['lambdamin'][0],
+#                    'lambdamax': results['lambdamax'][0],
+#                    'V0dim': int(results['V0dim']),
+#                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+#            }
+#            dfs.append(data)
+#            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+#            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+#####END CASE 5 and 8
+        # ax.plot(results['precresiduals'])
+######CASE 6 
+#        res_case_6 = regexp_case_6.search(os.path.split(dirpath)[-1])
+#        if res_case_6:
+#            name = open(os.path.join(dirpath, 'name.txt')).read()
+#            data = {' ': name,
+#                    'nbstripes': results['stripe_nb'],
+#                    'kappa': results['kappa'][0],
+#                    'iter': len(results['precresiduals']),
+#                    'lambdamin': results['lambdamin'][0],
+#                    'lambdamax': results['lambdamax'][0],
+#                    'V0dim': int(results['V0dim']),
+#                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+#            }
+#            dfs.append(data)
+#            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+#            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+######END CASE 6 
+######CASE 7 
+#        res_case_7 = regexp_case_7.search(os.path.split(dirpath)[-1])
+#        if res_case_7:
+#            name = open(os.path.join(dirpath, 'name.txt')).read()
+#            data = {' ': name,
+#                    'N': len(results['minV0_gathered_dim']),
+#                    'kappa': results['kappa'][0],
+#                    'iter': len(results['precresiduals']),
+#                    'lambdamin': results['lambdamin'][0],
+#                    'lambdamax': results['lambdamax'][0],
+#                    'V0dim': int(results['V0dim']),
+#                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+#            }
+#            dfs.append(data)
+#            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+#            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+######END CASE 7 
+
+
+
 
 
 ax.set_xlabel('iteration number')
@@ -178,7 +264,6 @@ ax.set_ylabel('residual')
 ax.set_yscale('log')
 fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
 
-plot_condition_number(path, condition)
-#plot_condition_number(path, condition5)
+plot_condition_number(path, condition) #CASE 1 and 9
 df = pd.DataFrame(dfs)
 print(df.to_latex())

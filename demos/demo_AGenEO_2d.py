@@ -30,7 +30,7 @@ def save_json(path, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pc, ritz):
         results['stripe_nb'] = stripe_nb
         results['gathered_ns'] = pc.gathered_ns
         results['gathered_Gammas'] = pc.gathered_Gammas
-        results['nGamma'] = pc.nGamma
+#        results['nGamma'] = pc.nGamma
         results['nglob'] = pc.nglob
 
         if hasattr(pc, 'proj2'):
@@ -67,6 +67,9 @@ def save_json(path, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pc, ritz):
                 results['kappa_apos'] = (kappa.real, kappa.imag)
                 results['lambdamin_apos'] = (rmin.real, rmin.imag)
                 results['lambdamax_apos'] = (rmax.real, rmax.imag)
+        else:
+            results['sum_gathered_nneg'] = float(0.)
+
 
         results['precresiduals'] = ksp.getConvergenceHistory()[:].tolist()
         results['l2normofAxminusb'] = tmp1

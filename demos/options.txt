@@ -1,18 +1,16 @@
 
         -E1 100000000000.0
-        -E2 100000000000.0
-        -nu1 0.45
-        -nu2 0.45
+        -E2 10000000.0
+        -nu1 0.4
+        -nu2 0.4
         -Lx 3
         -Ly 3
         -n 21
-        -stripe_nb 0
-        -test_case output.d/case_2_pcnew_3_3_21_100000000000.0_100000000000.0_0.45_0.45_0_0.05_1e-10
-        -PCNew True 
--PCNew_switchtoASM False 
--PCNew_switchtoASMpos False 
--PCNew_H2CoarseProjection True 
--PCNew_H3CoarseProjection False
+        -stripe_nb 3
+        -test_case output.d/case_9_pcbnn_3_3_21_100000000000.0_10000000.0_0.4_0.4_3_0.5_1e-10
+        -PCNew False 
+-PCBNN_switchtoASM False 
+-PCBNN_CoarseProjection True
         -PCBNN_verbose False
         -PCBNN_GenEO_verbose False
         -PCNew_view True
@@ -20,7 +18,7 @@
         -PCBNN_GenEO True
         -PCNew_GenEO True
         -PCNew_ComputeRitzApos True
-        -PCBNN_GenEO_taueigmax 0.05
+        -PCBNN_GenEO_taueigmax 0.5
         -PCBNN_GenEO_taueigmin 0.1
         -PCBNN_GenEO_nev 30
         -ksp_Apos_ksp_converged_reason
