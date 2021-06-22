@@ -194,11 +194,11 @@ for (dirpath, dirnames, filenames) in os.walk(path):
 #                condition['AWG'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
 ######## END CASE 1
 #######CASE 9
-        if os.path.basename(dirpath).split('_')[1] == '9':
-            if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
-                condition['classical GenEO'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
-            else:
-                condition['AWG'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+#        if os.path.basename(dirpath).split('_')[1] == '9':
+#            if os.path.basename(dirpath).split('_')[2] == 'pcbnn':
+#                condition['classical GenEO'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
+#            else:
+#                condition['AWG'].append((results['taueigmax'], results['V0dim'], results['kappa'][0]))
 ######## END CASE 9
 #####CASE 5 and 8
 #        res_case_5 = regexp_case_5.search(os.path.split(dirpath)[-1])
@@ -236,24 +236,24 @@ for (dirpath, dirnames, filenames) in os.walk(path):
 #            dfs.append(data)
 #            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
 #            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
-######END CASE 6 
-######CASE 7 
-#        res_case_7 = regexp_case_7.search(os.path.split(dirpath)[-1])
-#        if res_case_7:
-#            name = open(os.path.join(dirpath, 'name.txt')).read()
-#            data = {' ': name,
-#                    'N': len(results['minV0_gathered_dim']),
-#                    'kappa': results['kappa'][0],
-#                    'iter': len(results['precresiduals']),
-#                    'lambdamin': results['lambdamin'][0],
-#                    'lambdamax': results['lambdamax'][0],
-#                    'V0dim': int(results['V0dim']),
-#                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
-#            }
-#            dfs.append(data)
-#            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
-#            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
-######END CASE 7 
+#######END CASE 6 
+#####CASE 7 
+        res_case_7 = regexp_case_7.search(os.path.split(dirpath)[-1])
+        if res_case_7:
+            name = open(os.path.join(dirpath, 'name.txt')).read()
+            data = {' ': name,
+                    'N': len(results['minV0_gathered_dim']),
+                    'kappa': results['kappa'][0],
+                    'iter': len(results['precresiduals']),
+                    'lambdamin': results['lambdamin'][0],
+                    'lambdamax': results['lambdamax'][0],
+                    'V0dim': int(results['V0dim']),
+                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+            }
+            dfs.append(data)
+            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+#####END CASE 7 
 
 
 
@@ -264,6 +264,6 @@ ax.set_ylabel('residual')
 ax.set_yscale('log')
 fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
 
-plot_condition_number(path, condition) #CASE 1 and 9
+#plot_condition_number(path, condition) #CASE 1 and 9
 df = pd.DataFrame(dfs)
 print(df.to_latex())

@@ -55,10 +55,9 @@ def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigm
     # os.system(f"mpiexec -np {ndomains} --oversubscribe python ./demo_AGenEO_2d.py -options_file options.txt")
 
 
-case = 9
+case = 7
 
 if case == 1:
-    error('dont erase case 1')
     nxdomains= [3]
     nydomains= [3]
     n = [21]#, 42]
@@ -67,11 +66,10 @@ if case == 1:
     E2 = [1e7]
     neigs = 30
     taueigmax = [0, 1e-3, 1e-2, 5e-2, 1e-1, 0.2, 0.5]
-    stripe_nb = [3]
+    stripe_nb = [2]
     nu1 = [0.3]*len(E1)
     nu2 = [0.3]*len(E1)
 elif case == 2:
-    error('dont erase case 2')
     nxdomains= [3]
     nydomains= [3]
     n = [21]#, 42]
@@ -86,7 +84,6 @@ elif case == 2:
     E1 = [1e11]*len(nu1)
     E2 = [1e11]*len(nu2)
 elif case == 3:
-    error('dont erase case 3')
     nxdomains= [3]
     nydomains= [3]
     Aposrtol = [1e-10]
@@ -94,12 +91,11 @@ elif case == 3:
     E2 = [1e5, 1e7,  1e9,  1e11, 1e11, 1e11, 1e11]
     neigs = 30
     taueigmax = [0.1]
-    stripe_nb = [3]
+    stripe_nb = [2]
     n = [21]#, 42]
     nu1 = [0.3]*len(E1)
     nu2 = [0.3]*len(E1)
 elif case == 4: #options takes several values (see below)
-    error('dont erase case 4')
     nxdomains= [3]
     nydomains= [3]
     E1 = [1e11]
@@ -107,12 +103,11 @@ elif case == 4: #options takes several values (see below)
     Aposrtol = [1e-10]
     neigs = 20
     taueigmax = [0.1]
-    stripe_nb = [3]
+    stripe_nb = [2]
     n = [21]#, 42]
     nu1 = [0.3]*len(E1)
     nu2 = [0.3]*len(E1)
 elif case == 5: #options takes several values (see below)
-    error('dont erase case 5')
     nxdomains= [3]
     nydomains= [3]
     E1 = [1e11]
@@ -121,12 +116,11 @@ elif case == 5: #options takes several values (see below)
     Aposrtol = [5e-2, 1e-1, 5e-1, 9e-1]
     neigs = 20
     taueigmax = [0.1]
-    stripe_nb = [3]
+    stripe_nb = [2]
     n = [21]#, 42]
     nu1 = [0.3]*len(E1)
     nu2 = [0.3]*len(E1)
 elif case == 6:
-    error('dont erase case 6')
     nxdomains= [3]
     nydomains= [3]
     Aposrtol = [1e-10]
@@ -134,26 +128,23 @@ elif case == 6:
     E2 = [1e7]
     neigs = 30
     taueigmax = [0.1]
-    stripe_nb = [0, 1, 2, 3, 4] #4 will set E = E2
+    #stripe_nb = [0, 1, 2, 3, 4] #4 will set E = E2
     n = [21]#, 42]
     nu1 = [0.3]*len(E1)
     nu2 = [0.3]*len(E1)
 elif case == 7:
-    error('dont erase case 7')
-    nxdomains= [2,4,8,16,32,64]
-    #nxdomains= [32,64]
+    nxdomains= [2,4,8,15,29]
     nydomains= [1]*len(nxdomains)
     Aposrtol = [1e-10]
     E1 = [1e11]
     E2 = [1e7]
     neigs = 30
     taueigmax = [0.1]
-    stripe_nb = [3] #4 will set E = E2
+    stripe_nb = [2] #4 will set E = E2
     n = [14]#, 42]
     nu1 = [0.3]*len(E1)
     nu2 = [0.3]*len(E1)
 elif case == 8: #options takes several values (see below)
-    error('dont erase case 8')
     nxdomains= [3]
     nydomains= [3]
     E1 = [1e11]
@@ -162,12 +153,11 @@ elif case == 8: #options takes several values (see below)
     Aposrtol = [5e-2, 1e-1, 5e-1, 9e-1]
     neigs = 20
     taueigmax = [0.1]
-    stripe_nb = [3]
+    stripe_nb = [2]
     n = [21]#, 42]
     nu1 = [0.4]*len(E1)
     nu2 = [0.4]*len(E1)
 if case == 9:
-#    error('dont erase case 1')
     nxdomains= [3]
     nydomains= [3]
     n = [21]#, 42]
@@ -176,7 +166,7 @@ if case == 9:
     E2 = [1e7]
     neigs = 30
     taueigmax = [0, 1e-3, 1e-2, 5e-2, 1e-1, 0.2, 0.5]
-    stripe_nb = [3]
+    stripe_nb = [2]
     nu1 = [0.4]*len(E1)
     nu2 = [0.4]*len(E1)
 

@@ -152,7 +152,7 @@ def lame_coeff(x, y, v1, v2, stripe_nb, Ly):
     elif stripe_nb == 3:
         if mpi.COMM_WORLD.rank == 0:
             print(f'Test number {stripe_nb} - three stripes')
-        mask= np.logical_or(np.logical_and(1./7<=y-np.floor(y), y-np.floor(y)<=2./7),np.logical_and(3./7<=y-np.floor(y), y-np.floor(y)<=4./7), np.logical_and(5./7<=y-np.floor(y), y-np.floor(y)<=6./7))
+        mask= np.logical_or(np.logical_or(np.logical_and(1./7<=y-np.floor(y), y-np.floor(y)<=2./7),np.logical_and(3./7<=y-np.floor(y), y-np.floor(y)<=4./7)), np.logical_and(5./7<=y-np.floor(y), y-np.floor(y)<=6./7))
     else:
         if mpi.COMM_WORLD.rank == 0:
             print(f'Test number {stripe_nb} is not implemented, instead I set E={E2}')
