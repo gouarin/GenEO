@@ -9,7 +9,10 @@ from matplotlib.ticker import MaxNLocator
 from io import BytesIO
 import pandas as pd
 
+pv.set_plot_theme("document")
+
 def get_cell_value(y, E1, E2, stripe_nb,Ly):
+    stripe_nb = 2
     if stripe_nb == 0:
         return E2
     elif stripe_nb == 1:
@@ -28,9 +31,35 @@ def get_cell_value(y, E1, E2, stripe_nb,Ly):
         else:
             return E2
 
+def plot_solution(path, data, E1, E2, stripe_nb, Ly):
+    scale = 100000
+
+    p = pv.Plotter(off_screen=True)
+
+    filename = os.path.join(path, 'solution_2d.vts')
+    if os.path.exists(filename):
+        grid = pv.read(os.path.join(path, 'solution_2d.vts'))
+        E = np.zeros((grid.n_cells))
+        for ic in range(grid.n_cells):
+            cell = grid.cell_points(ic)
+            center_y = .5*(cell[0, 1] + cell[2, 1])
+            E[ic] = get_cell_value(center_y, E1, E2, stripe_nb,Ly)
+
+        grid.cell_arrays.update({'E': E})
+        disp = grid.point_arrays['Unnamed']
+
+        print(grid.x.shape, disp.shape)
+        grid.x.T.flat[:] += scale*disp[:, 0]
+        grid.y.T.flat[:] += scale*disp[:, 1]
+
+        p.add_mesh(grid, scalars='E', show_edges=True, show_scalar_bar=False, n_colors=2, edge_color='#464646', cmap=['#dbd9d3', '#a2acbd'])
+        print(os.path.join(path, 'solution.png'))
+        p.show(cpos='xy', screenshot=os.path.join(path, 'solution.png'))
+
 def plot_coarse_vec(path, data, E1, E2, stripe_nb,Ly):
     scale = 0.5
     for k, v in data.items():
+        print(k, v)
         ncol = int(np.ceil(np.sqrt(len(v))))
 
         p = pv.Plotter(shape=(ncol, ncol), off_screen=True)
@@ -41,6 +70,7 @@ def plot_coarse_vec(path, data, E1, E2, stripe_nb,Ly):
         iplot = 0
         for i in range(ncol):
             for j in range(ncol):
+                p_individual = pv.Plotter(off_screen=True)
                 if iplot < len(v):
                     h5 = h5py.File(os.path.join(path, v[iplot]))
                     coords = h5['coordinates']
@@ -83,7 +113,10 @@ def plot_coarse_vec(path, data, E1, E2, stripe_nb,Ly):
 
                     p.subplot(i, j)
                     p.add_text(f"{prop['eigs'][iplot]}", position='upper_edge', font_size=4)
-                    p.add_mesh(grid, show_edges=True)
+                    p.add_mesh(grid, show_edges=True, show_scalar_bar=False, n_colors=2, edge_color='#464646', cmap=['#dbd9d3', '#a2acbd'])
+
+                    p_individual.add_mesh(grid, show_edges=True, show_scalar_bar=False, n_colors=2, edge_color='#464646', cmap=['#dbd9d3', '#a2acbd'])
+                    p_individual.show(cpos='xy', window_size=[800, 800], screenshot=os.path.join(path, f'coarse_vec_{k}_{iplot}.png'))
                     iplot += 1
 
         p.show(cpos='xy', screenshot=os.path.join(path, f'coarse_vec_{k}.png'))
@@ -149,6 +182,23 @@ for (dirpath, dirnames, filenames) in os.walk(path):
         with open(os.path.join(dirpath, 'results.json')) as json_file:
             results = json.load(json_file)
 
+        res_case_4 = regexp_case_4.search(os.path.split(dirpath)[-1])
+
+        if res_case_4:
+            name = open(os.path.join(dirpath, 'name.txt')).read()
+            data_case4 = {'name': name,
+                    'kappa': results['kappa'][0],
+                    'labdamin': results['lambdamin'][0],
+                    'lambdamax': results['lambdamax'][0],
+                    'V0dim': int(results['V0dim']),
+                    # 'vneg': results['vneg'],
+                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+            }
+            dfs.append(data_case4)
+        plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+        plot_solution(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+
+        # plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
 
 #####CASE 2
 #        res_case_2 = regexp_case_2.search(os.path.split(dirpath)[-1])
@@ -220,7 +270,7 @@ for (dirpath, dirnames, filenames) in os.walk(path):
 #            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
 #####END CASE 5 and 8
         # ax.plot(results['precresiduals'])
-######CASE 6 
+######CASE 6
 #        res_case_6 = regexp_case_6.search(os.path.split(dirpath)[-1])
 #        if res_case_6:
 #            name = open(os.path.join(dirpath, 'name.txt')).read()
@@ -236,8 +286,8 @@ for (dirpath, dirnames, filenames) in os.walk(path):
 #            dfs.append(data)
 #            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
 #            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
-#######END CASE 6 
-#####CASE 7 
+#######END CASE 6
+#####CASE 7
         res_case_7 = regexp_case_7.search(os.path.split(dirpath)[-1])
         if res_case_7:
             name = open(os.path.join(dirpath, 'name.txt')).read()
@@ -253,16 +303,16 @@ for (dirpath, dirnames, filenames) in os.walk(path):
             dfs.append(data)
             #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
             plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
-#####END CASE 7 
+#####END CASE 7
 
 
 
 
 
-ax.set_xlabel('iteration number')
-ax.set_ylabel('residual')
-ax.set_yscale('log')
-fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
+# ax.set_xlabel('iteration number')
+# ax.set_ylabel('residual')
+# ax.set_yscale('log')
+# fig.savefig(os.path.join(path, 'residuals.png'), dpi=300)
 
 #plot_condition_number(path, condition) #CASE 1 and 9
 df = pd.DataFrame(dfs)

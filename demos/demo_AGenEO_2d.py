@@ -57,7 +57,7 @@ def save_json(path, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pc, ritz):
             results['sum_dimKerMs'] = float(np.sum(pc.GenEOV0.gathered_dimKerMs))
 
         if isinstance(pc, PCNew):
-            results['Aposrtol'] = pc.ksp_Apos.getTolerances()[0] 
+            results['Aposrtol'] = pc.ksp_Apos.getTolerances()[0]
             results['gathered_nneg'] = pc.gathered_nneg
             results['sum_gathered_nneg'] = float(np.sum(pc.gathered_nneg))
             if pc.compute_ritz_apos and pc.ritz_eigs_apos is not None:
@@ -120,7 +120,7 @@ computeRitz  =  OptDB.getBool('computeRitz', True)
 stripe_nb = OptDB.getInt('stripe_nb', 3)
 
 #TODO: I did this just so I could save this option to json file. The variable tmp_ksp_Apos_rtol is never used
-tmp_ksp_Apos_rtol = OptDB.getReal('ksp_Apos_ksp_rtol', -1) 
+tmp_ksp_Apos_rtol = OptDB.getReal('ksp_Apos_ksp_rtol', -1)
 
 if mpi.COMM_WORLD.rank == 0:
     if not os.path.exists(test_case):
@@ -271,6 +271,9 @@ ksp.setFromOptions()
 ###### SOLVE:
 ksp.solve(b, x)
 
+viewer = PETSc.Viewer().createVTK(f'{test_case}/solution_2d.vts', 'w', comm = PETSc.COMM_WORLD)
+x.view(viewer)
+
 if computeRitz:
     Ritz = ksp.computeEigenvalues()
     Ritzmin = Ritz.min()
@@ -310,5 +313,5 @@ save_json(test_case, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
 #ksp_Amumps.solve(b,x)
 #if mpi.COMM_WORLD.rank == 0:
 #    print('finished computing MUMPS global solution')
-#viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
-#x.view(viewer)
+
+

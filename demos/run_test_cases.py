@@ -80,7 +80,7 @@ elif case == 2:
     taueigmax = [5e-2]
     stripe_nb = [0]
     nu1 = [0.2, 0.3, 0.35, 0.4, 0.45, 0.49]
-    nu2 = nu1 
+    nu2 = nu1
     E1 = [1e11]*len(nu1)
     E2 = [1e11]*len(nu2)
 elif case == 3:
@@ -180,14 +180,14 @@ else:
                      #('pcnew_AShyb_ad', "-PCNew True \n-PCNew_switchtoASM True \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
                      #('pcnew_ASposhyb_ad', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
                      #('pcnew_ASposad_ad', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection False \n-PCNew_H3CoarseProjection False"),
-                     #('pcnew_NNhyb_hyb', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
+                     ('pcnew_NNhyb_hyb', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
                      #('pcnew_AShyb_hyb', "-PCNew True \n-PCNew_switchtoASM True \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
                      #('pcnew_ASposhyb_hyb', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection True"),
                      #('pcnew_ASposad_hyb', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos True \n-PCNew_H2CoarseProjection False \n-PCNew_H3CoarseProjection True"),
                      #('pcbnn_AShyb', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection True"),
                      #('pcbnn_ASad', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection False"),
                      #('pcbnn_NNhyb', "-PCNew False \n-PCBNN_switchtoASM False \n-PCBNN_CoarseProjection True"),
-                     ('pcbnn_AS_onelevel', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection False \n  -PCBNN_addCoarseSolve False "),
+                    #  ('pcbnn_AS_onelevel', "-PCNew False \n-PCBNN_switchtoASM True \n-PCBNN_CoarseProjection False \n  -PCBNN_addCoarseSolve False "),
     ]
 
 if not os.path.exists('output.d'):
