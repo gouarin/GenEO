@@ -1,9 +1,6 @@
-# Authors:
-#     Loic Gouarin <loic.gouarin@cmap.polytechnique.fr>
-#     Nicole Spillane <nicole.spillane@cmap.polytechnique.fr>
-#
-# License: BSD 3 clause
+
 from __future__ import print_function, division
+import os
 import sys, petsc4py
 petsc4py.init(sys.argv)
 import mpi4py.MPI as mpi
@@ -21,8 +18,8 @@ Ly = OptDB.getInt('Ly', 1)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n)
 ny = OptDB.getInt('ny', Ly*n)
-E1 = OptDB.getReal('E1', 10**9)
-E2 = OptDB.getReal('E2', 10**6)
+E1 = OptDB.getReal('E1', 10**6)
+E2 = OptDB.getReal('E2', 1)
 nu1 = OptDB.getReal('nu1', 0.4)
 nu2 = OptDB.getReal('nu2', 0.4)
 
@@ -32,6 +29,15 @@ hy = Ly/(ny - 1)
 da = PETSc.DMDA().create([nx, ny], dof=2, stencil_width=1)
 da.setUniformCoordinates(xmax=Lx, ymax=Ly)
 da.setMatType(PETSc.Mat.Type.IS)
+da.setFieldName(0, 'u')
+da.setFieldName(1, 'v')
+
+path = './output_2d/'
+if mpi.COMM_WORLD.rank == 0:
+    if not os.path.exists(path):
+        os.mkdir(path)
+    else:
+        os.system('rm {}/*.vts'.format(path))
 
 def lame_coeff(x, y, v1, v2):
     output = np.empty(x.shape)
@@ -40,11 +46,11 @@ def lame_coeff(x, y, v1, v2):
     output[np.logical_not(mask)] = v2
     return output
 
-# non constant Young's modulus and Poisson's ratio
+# non constant Young's modulus and Poisson's ratio 
 E = buildCellArrayWithFunction(da, lame_coeff, (E1,E2))
 nu = buildCellArrayWithFunction(da, lame_coeff, (nu1,nu2))
 
-lamb = (nu*E)/((1+nu)*(1-2*nu))
+lamb = (nu*E)/((1+nu)*(1-2*nu)) 
 mu = .5*E/(1+nu)
 
 class callback:
@@ -52,7 +58,7 @@ class callback:
         self.da = da
         ranges = da.getRanges()
         ghost_ranges = da.getGhostRanges()
-
+        
         self.slices = []
         for r, gr in zip(ranges, ghost_ranges):
             self.slices.append(slice(gr[0], r[1]))
@@ -64,24 +70,28 @@ class callback:
         pyKSP = locals['self']
         proj = pyKSP.mpc.proj
 
+        viewer_x = PETSc.Viewer().createVTK(path + 'cg_ite_{}.vts'.format(self.it), 'w', comm = PETSc.COMM_WORLD)
+        locals['x'].view(viewer_x)
+        viewer_x.destroy()
+        
         if self.it == 0:
             work, _ = proj.A.getVecs()
-            for i, vec in enumerate(proj.V0):
+            for i, vec in enumerate(proj.coarse_vecs):
                 if vec:
-                    proj.works = vec.copy()
+                    proj.workl = vec.copy()
                 else:
-                    proj.works.set(0.)
+                    proj.workl.set(0.)
                 work.set(0)
-                proj.scatter_l2g(proj.works, work, PETSc.InsertMode.ADD_VALUES)
+                proj.scatter_l2g(proj.workl, work, PETSc.InsertMode.ADD_VALUES)
 
-                viewer = PETSc.Viewer().createVTK('output.d/coarse_vec_{}.vts'.format(i), 'w', comm = PETSc.COMM_WORLD)
+                viewer = PETSc.Viewer().createVTK(path + 'coarse_vec_{}.vts'.format(i), 'w', comm = PETSc.COMM_WORLD)
                 tmp = self.da.createGlobalVec()
                 tmpl_a = self.da.getVecArray(tmp)
                 work_a = self.da.getVecArray(work)
                 tmpl_a[:] = work_a[:]
                 tmp.view(viewer)
                 viewer.destroy()
-            self.it += 1
+        self.it += 1
 
 
 x = da.createGlobalVec()
@@ -100,17 +110,29 @@ x *= xnorm
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
-
-ksp.setType("cg")
-
-#ksp.setType(ksp.Type.PYTHON)
-#pyKSP = KSP_AMPCG(pcbnn)
-#pyKSP.callback = callback(da)
-#ksp.setPythonContext(pyKSP)
+ksp.setType(ksp.Type.PYTHON)
+pyKSP = KSP_AMPCG(pcbnn)
+pyKSP.callback = callback(da)
+ksp.setPythonContext(pyKSP)
 ksp.setFromOptions()
 ksp.setInitialGuessNonzero(True)
 
 ksp.solve(b, x)
 
-viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
+def write_simu_info(da, viewer):
+    lamb_petsc = da.createGlobalVec()
+    lamb_a = da.getVecArray(lamb_petsc)
+    coords = da.getCoordinates()
+    coords_a = da.getVecArray(coords)
+    E = lame_coeff(coords_a[:, :, 0], coords_a[:, :, 1], E1, E2)
+    nu = lame_coeff(coords_a[:, :, 0], coords_a[:, :, 1], nu1, nu2)
+
+    lamb_a[:, :, 0] = (nu*E)/((1+nu)*(1-2*nu)) 
+    lamb_a[:, :, 1] = mpi.COMM_WORLD.rank
+    lamb_petsc.view(viewer)
+
+
+viewer = PETSc.Viewer().createVTK(path + 'solution_2d.vts', 'w', comm = PETSc.COMM_WORLD)
 x.view(viewer)
+write_simu_info(da, viewer)
+viewer.destroy()

@@ -16,15 +16,17 @@ def rhs(coords, rhs):
     rhs[..., 1] = -9.81
 
 OptDB = PETSc.Options()
-Lx = OptDB.getInt('Lx', 10)
+Lx = OptDB.getInt('Lx', 4)
 Ly = OptDB.getInt('Ly', 1)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n)
 ny = OptDB.getInt('ny', Ly*n)
-E1 = OptDB.getReal('E1', 10**9)
+E1 = OptDB.getReal('E1', 10**12)
 E2 = OptDB.getReal('E2', 10**6)
 nu1 = OptDB.getReal('nu1', 0.4)
 nu2 = OptDB.getReal('nu2', 0.4)
+test_case = OptDB.getString('test_case', 'default')
+isPCNew = OptDB.getBool('PCNew', True)
 
 hx = Lx/(nx - 1)
 hy = Ly/(ny - 1)
@@ -91,26 +93,46 @@ A.assemble()
 bcApplyWest(da, A, b)
 
 #Setup the preconditioner (or multipreconditioner) and the coarse space
-pcbnn = PCBNN(A)
+pcbnn = PCNew(A)
 
-# Set initial guess
-x.setRandom()
-xnorm = b.dot(x)/x.dot(A*x)
-x *= xnorm
+Apos = pcbnn.Apos
+############compute x FOR INITIALIZATION OF PCG
+# Random initial guess
+print('Random rhs')
+b.setRandom()
 
-ksp = PETSc.KSP().create()
-ksp.setOperators(A)
 
-ksp.setType("cg")
+#Pre-compute solution in coarse space
+#Required for PPCG (projected preconditioner)
+#Doesn't hurt or help the hybrid and additive preconditioners
+#the initial guess is passed to the PCG below with the option ksp.setInitialGuessNonzero(True)
 
-#ksp.setType(ksp.Type.PYTHON)
-#pyKSP = KSP_AMPCG(pcbnn)
-#pyKSP.callback = callback(da)
-#ksp.setPythonContext(pyKSP)
-ksp.setFromOptions()
-ksp.setInitialGuessNonzero(True)
 
-ksp.solve(b, x)
+if mpi.COMM_WORLD.rank == 0:
+    print('solve a problem for Apos preconditioned by H2')
+############END of: compute x FOR INITIALIZATION OF PCG
 
-viewer = PETSc.Viewer().createVTK('solution_2d_asm.vts', 'w', comm = PETSc.COMM_WORLD)
-x.view(viewer)
+#############SETUP KSP
+ksp_Apos = pcbnn.ksp_Apos
+# ksp_Apos.setOptionsPrefix("")
+# pc_Apos = ksp_Apos.pc
+# pc_Apos = pcbnn.pc_Apos
+# pc_Apos.setFromOptions()
+
+# ksp_Apos.setType("cg")
+#ksp_Apos.setComputeEigenvalues(True)
+# #pyKSP.callback = callback(da)
+# ksp_Apos.setType(ksp_Apos.Type.PYTHON)
+# pyKSP = KSP_PCG()
+# ksp_Apos.setPythonContext(pyKSP)
+
+# ksp_Apos.setFromOptions()
+#### END SETUP KSP
+
+###### SOLVE:
+ksp_Apos.solve(b, x)
+
+Aposx = x.duplicate()
+pcbnn.Apos.mult(x,Aposx)
+print(f'norm of Apos x - b = {(Aposx - b).norm()}, norm of b = {b.norm()}')
+

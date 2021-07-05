@@ -1,0 +1,41 @@
+        -E1 100000000000.0
+        -E2 10000000.0
+        -nu1 0.3
+        -nu2 0.3
+        -Lx 8 
+        -Ly 1
+        -n 14
+        -stripe_nb 2
+        -test_case output.d/test
+        -PCNew True 
+        -PCBNN_switchtoASM False 
+        -PCBNN_CoarseProjection True
+        -PCBNN_verbose False
+        -PCBNN_GenEO_verbose False
+        -PCNew_view True
+        -PCBNN_view True
+        -PCBNN_GenEO True
+        -PCNew_GenEO True
+        -PCNew_ComputeRitzApos True
+        -PCBNN_GenEO_taueigmax 0.1
+        -PCBNN_GenEO_taueigmin 0.1
+        -PCBNN_GenEO_nev 30
+        -ksp_Apos_ksp_converged_reason
+        -ksp_Apos_ksp_rtol 1e-10
+        -computeRitz True
+        -global_ksp_ksp_monitor_true_residual
+        -global_ksp_ksp_rtol 1e-10
+        -global_ksp_ksp_converged_reason
+        -global_ksp_ksp_max_it 150
+        -ksp_N_ksp_monitor_true_residual
+        -ksp_N_ksp_rtol 1e-10
+        -ksp_N_ksp_converged_reason
+        -ksp_N_ksp_max_it 150
+        -PCNew_viewV0 False
+        -PCNew_viewGenEO False
+        -PCNew_viewminV0 False
+        -PCNew_viewnegV0 False
+        -PCBNN_viewV0 False
+        -PCBNN_viewGenEO False
+        -PCBNN_viewminV0 False
+        -PCBNN_kscaling False
