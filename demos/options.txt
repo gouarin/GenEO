@@ -1,16 +1,15 @@
-
         -E1 100000000000.0
         -E2 10000000.0
         -nu1 0.3
         -nu2 0.3
-        -Lx 29
+        -Lx 8 
         -Ly 1
         -n 14
         -stripe_nb 2
-        -test_case output.d/case_7_pcbnn_29_1_14_100000000000.0_10000000.0_0.3_0.3_2_0.1_1e-10
-        -PCNew False 
--PCBNN_switchtoASM False 
--PCBNN_CoarseProjection True
+        -test_case output.d/test
+        -PCNew True 
+        -PCBNN_switchtoASM False 
+        -PCBNN_CoarseProjection True
         -PCBNN_verbose False
         -PCBNN_GenEO_verbose False
         -PCNew_view True
@@ -28,6 +27,10 @@
         -global_ksp_ksp_rtol 1e-10
         -global_ksp_ksp_converged_reason
         -global_ksp_ksp_max_it 150
+        -ksp_N_ksp_monitor_true_residual
+        -ksp_N_ksp_rtol 1e-10
+        -ksp_N_ksp_converged_reason
+        -ksp_N_ksp_max_it 150
         -PCNew_viewV0 False
         -PCNew_viewGenEO False
         -PCNew_viewminV0 False

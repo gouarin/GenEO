@@ -50,7 +50,6 @@ def save_json(path, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pc, ritz):
             results['GenEOV0_gathered_nsharp'] = pc.GenEOV0.gathered_nsharp
             results['GenEOV0_gathered_nflat'] = pc.GenEOV0.gathered_nflat
             results['GenEOV0_gathered_dimKerMs'] = pc.GenEOV0.gathered_dimKerMs
-            print(pc.GenEOV0.gathered_Lambdasharp)
             results['GenEOV0_gathered_Lambdasharp'] = [[(d.real, d.imag) for d in l] for l in pc.GenEOV0.gathered_Lambdasharp]
             results['GenEOV0_gathered_Lambdaflat'] =  [[(d.real, d.imag) for d in l] for l in pc.GenEOV0.gathered_Lambdaflat]
             results['sum_nsharp'] = float(np.sum(pc.GenEOV0.gathered_nsharp))

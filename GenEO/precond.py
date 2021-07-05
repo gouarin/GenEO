@@ -12,7 +12,7 @@ from slepc4py import SLEPc
 import mpi4py.MPI as mpi
 import numpy as np
 import scipy as sp
-import copy
+import os
 
 class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
     def __init__(self, A_IS):
@@ -317,6 +317,8 @@ class PCBNN(object): #Neumann-Neumann and Additive Schwarz with no overlap
 
     def savetofile(self):
         if mpi.COMM_WORLD.rank == 0:
+            if not os.path.exists(self.test_case):
+                os.mkdir(self.test_case)
             np.savez(f'{self.test_case}/init',
                switchtoASM=  self.switchtoASM,
                kscaling   =  self.kscaling,
@@ -727,6 +729,7 @@ class PCNew:
 
         self.A = A_mpiaij
         self.Apos = Apos
+        self.Aneg = Aneg
         self.Ms = Ms
         self.As = As
         self.RsAposRsts = RsAposRsts
@@ -790,33 +793,79 @@ class PCNew:
         if self.verbose:
             if mpi.COMM_WORLD.rank == 0:
                 print(f'#V0(H2) = rank(Ker(Pi2)) = {len(self.proj2.V0)}')
-        works.set(0.)
         Vneg = []
         for i in range(mpi.COMM_WORLD.size):
             nnegi = len(Vnegs) if i == mpi.COMM_WORLD.rank else None
             nnegi = mpi.COMM_WORLD.bcast(nnegi, root=i)
             for j in range(nnegi):
-                Vneg.append(Vnegs[j].copy() if i == mpi.COMM_WORLD.rank else works.copy())
+                if i == mpi.COMM_WORLD.rank:
+                    works = Vnegs[j].copy()
+                else: 
+                    works.set(0.)
+                self.work.set(0)
+                self.scatter_l2g(works, self.work, PETSc.InsertMode.ADD_VALUES)
+                Vneg.append(self.work.copy())
         AposinvV0 = []
         self.ritz_eigs_apos = None
         for vec in Vneg:
-            self.works = vec.copy()
-            self.work.set(0)
-            self.scatter_l2g(self.works, self.work, PETSc.InsertMode.ADD_VALUES)
-            self.ksp_Apos.solve(self.work,self.work_2)
+            self.ksp_Apos.solve(vec,self.work_2)
             if self.compute_ritz_apos and self.ritz_eigs_apos is None:
                 self.ritz_eigs_apos = self.ksp_Apos.computeEigenvalues()
                 self.ksp_Apos.setComputeEigenvalues(False)
 
             AposinvV0.append(self.work_2.copy())
-            ##
-            Aposx = self.work.duplicate()
-            Apos.mult(self.work_2,Aposx)
-            ##
         self.AposinvV0 = AposinvV0
         self.proj3 = coarse_operators(self.AposinvV0,self.A,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
         self.proj = self.proj3 #this name is consistent with the proj in PCBNN
 
+###############################
+#        ###Alternative to assembling the second coarse operators 
+#
+#        ###
+#        self.Id = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
+#        self.Id.setPythonContext(Id_ctx())
+#        self.Id.setUp()
+#
+#        #self.Id = PETSc.Mat().create(comm=PETSc.COMM_SELF)
+#        #self.Id.setType("constantdiagonal") #I don't know how to set the value to 1
+#
+#        #self.N = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
+#        #self.N.setPythonContext(N_ctx(self.Aneg,self.A,self.ksp_Apos,self.work,self.work_2))
+#        #self.N.setUp()
+#
+#        #self.ksp_N = PETSc.KSP().create(comm=PETSc.COMM_WORLD)
+#        #self.ksp_N.setOptionsPrefix("ksp_N_")
+#        #self.ksp_N.setOperators(self.N)
+#        #self.ksp_N.setType("gmres")
+#        #self.ksp_N.setGMRESRestart(151)
+##       # if self.compute_ritz_N:
+#        #self.ksp_N.setComputeEigenvalues(True)
+#        ##self.pc_N = self.ksp_N.getPC()
+#        ##self.pc_N.setType('python')
+#        ##self.pc_N.setPythonContext(
+#        #self.ksp_N.setFromOptions()
+#        self.proj4 = coarse_operators(Vneg,self.Id,self.scatter_l2g,self.works_1,self.work,V0_is_global=True)
+#
+#        self.ProjA = PETSc.Mat().createPython([work.getSizes(), work.getSizes()], comm=PETSc.COMM_WORLD)
+#        self.ProjA.setPythonContext(ProjA_ctx(self.proj4,self.A))
+#        self.ProjA.setUp()
+#        self.work.set(1.)
+#        #test = self.work.duplicate()
+#        #self.ProjA.mult(self.work,test)
+#        #print('self.ProjA works ok')
+#
+#        self.ksp_ProjA = PETSc.KSP().create(comm=PETSc.COMM_WORLD)
+#        self.ksp_ProjA.setOptionsPrefix("ksp_ProjA_")
+#        self.ksp_ProjA.setOperators(self.ProjA)
+#        self.ksp_ProjA.setType("gmres")
+#        self.ksp_ProjA.setGMRESRestart(151)
+#        self.ksp_ProjA.setComputeEigenvalues(True)
+#        #self.pc_ProjA = self.ksp_N.getPC()
+#        #self.pc_ProjA.setType('python')
+#        #self.pc_ProjA.setPythonContext(
+#        self.ksp_ProjA.setFromOptions()
+###############################
+        ##
         if self.viewV0 == True:
             self.proj.view()
 
@@ -1122,6 +1171,8 @@ class PCNew:
 
     def savetofile(self):
         if mpi.COMM_WORLD.rank == 0:
+            if not os.path.exists(self.test_case):
+                os.mkdir(self.test_case)
             np.savez(f'{self.test_case}/init',
             switchtoASM        = self.switchtoASM,
             verbose            = self.verbose,
@@ -1371,4 +1422,58 @@ class H2_ctx(object):
             if ytild.dot(xd) < 0:
                 print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
             y += ytild
+
+class N_ctx(object): #(I - Aneg *invApos)
+    def __init__(self,Aneg,A,ksp_Apos,work,work_2):
+        self.Aneg = Aneg
+        self.A = A
+        self.ksp_Apos = ksp_Apos
+        self.work = work
+        self.work_2 = work_2
+    def mult(self, mat, x, y):
+        if mpi.COMM_WORLD.rank == 0:
+            print('in N_ctx')
+        self.ksp_Apos.solve(x,self.work)
+        #self.A.mult(self.work,y)
+        self.Aneg.mult(self.work,self.work_2)
+        #self.Aneg.mult(self.work,y)
+        y.set(0.)
+        y.axpy(1.,x)
+        y.axpy(-1.,self.work_2)
+class Id_ctx(object): # I
+#    def __init__(self):
+    def mult(self, mat, x, y):
+        y.axpy(1.,x)
+
+class ProjA_ctx(object): #(Vneg (Vnegt *Vneg)\Vnegt    *A )
+    def __init__(self, proj4, A):
+        self.proj4 = proj4 
+        self.A = A
+    def mult(self, mat, x, y):
+        xd = x.copy()
+        self.proj4.project(xd)
+        self.A.mult(xd,y)
+
+###UNFINISHED 
+#class Psi_ctx(object) #Dneg^{-1} - Vnegt Aneg^{-1} Vneg
+#    def __init__(self,Vneg,ksp_Apos,work,work_2):
+#        self.Vneg = Vneg
+#        self.work = work
+#        self.work = work_2
+#        #self.gamma = PETSc.Vec().create(comm=PETSc.COMM_SELF)
+#        #self.gamma.setType(PETSc.Vec.Type.SEQ)
+#        #self.gamma.setSizes(len(self.Vneg))
+#        self.ksp_Apos = ksp_Apos
+#    def mult(self, mat, x, y):
+# part with Dneg inv is not at all implemented yet
+#        self.work.set(0.)
+#        for i, vec in enumerate(self.Vneg):
+#            self.work.axpy(x[i], vec)
+#
+#        self.ksp_Apos.solve(self.work,self.work_2)
+#
+#        #y = self.gamma.duplicate()
+#        for i, vec in enumerate(self.V0):
+#            y[i] = vec.dot(x)
+#
 
