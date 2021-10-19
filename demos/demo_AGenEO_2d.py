@@ -212,10 +212,12 @@ A.assemble()
 bcApplyWest(da, A, b)
 
 #Setup the preconditioner (or multipreconditioner) and the coarse space
-if isPCNew:
-    pcbnn = PCNew(A)
-else:
-    pcbnn = PCBNN(A)
+# if isPCNew:
+#     pcbnn = PCNew(A)
+# else:
+#     pcbnn = PCBNN(A)
+
+pcbnn = PCAWG(A.convert('mpiaij'))
 
 save_coarse_vec(test_case, da, pcbnn)
 
