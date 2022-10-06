@@ -879,8 +879,8 @@ class Aneg_ctx(object):
         y.set(0)
         self.scatter_l2g(x, self.works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
         self.works_2.set(0)
-        for i,vec in enumerate(self.Vnegs):
-            self.works_2.axpy(self.works.dot(self.DVnegs[i]) , vec)
+        for i, vec in enumerate(self.Vnegs):
+            self.works_2.axpy(self.works.dot(self.DVnegs[i]), vec)
         self.scatter_l2g(self.works_2, y, PETSc.InsertMode.ADD_VALUES)
 
 class Apos_debug_ctx(object):
