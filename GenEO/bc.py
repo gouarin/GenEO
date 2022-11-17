@@ -118,7 +118,7 @@ def bcApplyWest(da, A, B):
         for i in range(1, dof):
             rows[i::dof] = rows[::dof] + i
 
-    A.zeroRowsColumnsLocal(rows)
+    A.zeroRowsColumns(rows)
 
     b = da.getVecArray(B)
     ranges = da.getRanges()
