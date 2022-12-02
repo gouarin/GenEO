@@ -10,7 +10,4 @@ dependencies:
     - mpi4py
     - petsc4py
     - slepc4py
-#    - vtk
-#    - ipywidgets
-#    - pip:
-#      - pythreejs
+    - fenics-dolfinx

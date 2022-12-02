@@ -4,9 +4,16 @@
 #
 # License: BSD 3 clause
 # from __future__ import print_function, division
-from fenics import *
 import sys, petsc4py
 petsc4py.init(sys.argv)
+
+from dolfinx import plot
+from dolfinx import fem
+from dolfinx.fem import Expression, Function, FunctionSpace, dirichletbc, Constant, locate_dofs_geometrical
+from dolfinx.io import XDMFFile
+from dolfinx.mesh import CellType, create_rectangle
+import ufl
+
 import mpi4py.MPI as mpi
 from petsc4py import PETSc
 import numpy as np
@@ -107,7 +114,6 @@ Ly = OptDB.getInt('Ly', 1)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n+1)
 ny = OptDB.getInt('ny', Ly*n+1)
-
 kappa1 = OptDB.getReal('kappa1', 10**12)
 kappa2 = OptDB.getReal('kappa2', 10**6)
 test_case = OptDB.getString('test_case', 'default')
@@ -116,49 +122,72 @@ computeRitz  =  OptDB.getBool('computeRitz', True)
 stripe_nb = OptDB.getInt('stripe_nb', 3)
 
 # Create mesh and define function space
-mesh = RectangleMesh(Point(0., 0.), Point(Lx, Ly), nx, ny, "crossed")
+mesh = create_rectangle(mpi.COMM_WORLD, ((0., 0.), (Lx, Ly)), (nx, ny), CellType.triangle)
 # mesh = RectangleMesh.create([Point(0., 0.), Point(Lx, Ly)],[nx,ny],CellType.Type.quadrilateral)
 
-exp = "(1./7<=x[1]-floor(x[1])) && (x[1]-floor(x[1])<=2./7)"
-kappak = Expression(f"{exp}? kappa2 : kappa1", degree=0, kappa1=kappa1, kappa2=kappa2)
 
-V0 = FunctionSpace(mesh, "DG", 0)
-kappa = interpolate(kappak, V0)
+class MyExpression:
+    def __init__(self, k1, k2):
+        self.kappa1 = k1
+        self.kappa2 = k2
+
+    def eval(self, x):
+        # Added some spatial variation here. Expression is sin(t)*x
+        mask = np.logical_and(1./7<=x[1]-np.floor(x[1]),  x[1]-np.floor(x[1])<=2./7)
+        return np.full(x.shape[1], kappa2*mask + kappa1*np.logical_not(mask))
+
+
+
+V0 = FunctionSpace(mesh, ("DG", 0))
+kappa = Function(V0)
+fk = MyExpression(kappa1, kappa2)
+kappa.interpolate(fk.eval)
 
 rho_g = 9.81
-f = Constant(-rho_g)
+# f = Constant(mesh, -rho_g)
+f = Constant(mesh, 1.)
 
-V = FunctionSpace(mesh, 'Lagrange', 1)
+V = FunctionSpace(mesh, ('Lagrange', 1))
 
-du = TrialFunction(V)
-u_ = TestFunction(V)
-a = kappa*inner(grad(du), grad(u_))*dx
-l = f* u_*dx
+u = ufl.TrialFunction(V)
+v = ufl.TestFunction(V)
+# F = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx - v*ufl.dx
+# a = fem.form(ufl.lhs(F))
+# l = fem.form(ufl.rhs(F))
 
+a = fem.form(kappa*ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx)
+l = fem.form(ufl.inner(f, v)*ufl.dx)
 
-def left(x, on_boundary):
-    return near(x[0], 0.)
+def left(x):
+    return np.isclose(x[0], 0.)
 
-bc = DirichletBC(V, Constant(0.), left)
+bc = dirichletbc(0., locate_dofs_geometrical(V, left), V)
 
 u = Function(V, name="Solution")
 
 # solve(a == l, u, bc)
 
-A = PETScMatrix()
-assemble(a, tensor=A)
-b = PETScVector()
-assemble(l, tensor=b)
-bc.apply(b)
+A = fem.petsc.assemble_matrix(a, bcs=[bc])
+A.assemble()
+# A.view()
+b = fem.petsc.assemble_vector(l)
+# b.view()
+fem.petsc.set_bc(b, [bc])
 
-A = A.mat()
+# A = PETScMatrix()
+# assemble(a, tensor=A)
+# b = PETScVector()
+# assemble(l, tensor=b)
+# bc.apply(b)
+
+# A = A.mat()
 #
-bc_dof = bc.get_boundary_values()
+# bc_dof = bc.get_boundary_values()
 
-A.zeroRowsColumnsLocal(list(bc_dof.keys()))
+# A.zeroRowsColumnsLocal(list(bc_dof.keys()))
 print(A.type)
 # A.view()
-b = b.vec()
+# b = b.vec()
 x = b.duplicate()
 
 def set_pcbnn(ksp, A, b, x):
@@ -234,12 +263,15 @@ if mpi.COMM_WORLD.rank == 0:
 
 # save_json(test_case, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
 
-u.vector()[:] = x.array
-#plot(u)
-#import matplotlib.pyplot as plt
-#plt.show()
-file=File('solution_2d.pvd')
-file << u
+
+with XDMFFile(mpi.COMM_WORLD, "solution_2d.xdmf", "w") as ufile_xdmf:
+    u.x.scatter_forward()
+    ufile_xdmf.write_mesh(mesh)
+    ufile_xdmf.write_function(u)
+
+# plot(u)
+# import matplotlib.pyplot as plt
+# plt.show()
 #viewer = PETSc.Viewer().createVTK(f'solution_2d.vts', 'w', comm = PETSc.COMM_WORLD)
 #x.view(viewer)
 #print("coucou")
