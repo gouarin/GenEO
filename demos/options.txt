@@ -2,13 +2,14 @@
         -E2 10000000.0
         -nu1 0.3
         -nu2 0.3
-        -Lx 8 
+        -Lx 8
         -Ly 1
         -n 14
+        -computeRitz 1
         -stripe_nb 2
         -test_case output.d/test
-        -PCNew True 
-        -PCBNN_switchtoASM False 
+        -PCNew True
+        -PCBNN_switchtoASM False
         -PCBNN_CoarseProjection True
         -PCBNN_verbose False
         -PCBNN_GenEO_verbose False
@@ -22,7 +23,6 @@
         -PCBNN_GenEO_nev 30
         -ksp_Apos_ksp_converged_reason
         -ksp_Apos_ksp_rtol 1e-10
-        -computeRitz True
         -global_ksp_ksp_monitor_true_residual
         -global_ksp_ksp_rtol 1e-10
         -global_ksp_ksp_converged_reason

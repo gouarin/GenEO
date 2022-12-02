@@ -436,7 +436,7 @@ class coarse_operators(object):
             #debug3 = np.sqrt(self.works.dot(self.works))
             #debug5 = self.works.norm()
             #print(f'normworks {debug3} = {debug5} normwork {debug1} = {debug4}')
-            self.A.mult(self.work,self.work2)
+            self.A.mult(self.work, self.work2)
             AV0.append(self.work2.copy())
             tmp = np.sqrt(self.work.dot(self.work2))
             if(self.V0_is_global == False):

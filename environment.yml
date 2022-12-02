@@ -2,18 +2,12 @@ name: petsc-geneo
 channels:
   - conda-forge
 dependencies:
-    - python=3
-    - six
     - numpy
     - scipy
     - matplotlib
     - sympy
-    - setuptools
     - cython
     - mpi4py
-    - petsc4py=3.9.1
-    - slepc4py=3.9.0
-    - vtk
-    - ipywidgets
-    - pip:
-      - pythreejs==1.0.0
+    - petsc4py
+    - slepc4py
+    - fenics-dolfinx
