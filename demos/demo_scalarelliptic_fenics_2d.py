@@ -159,20 +159,36 @@ a = fem.form(kappa*ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx)
 l = fem.form(ufl.inner(f, v)*ufl.dx)
 
 def left(x):
-    return np.isclose(x[0], 0.)
+    return np.isclose(x[0], 0)
 
-bc = dirichletbc(0., locate_dofs_geometrical(V, left), V)
+def up(x):
+    return np.isclose(x[1], Ly)
+
+def down(x):
+    return np.isclose(x[1], 0)
+
+def left_condition(x):
+    return -(x[1] - 0.)*(x[1] - Ly)
+
+left_bc = Function(V)
+left_bc.interpolate(left_condition)
+bc_left = dirichletbc(left_bc, locate_dofs_geometrical(V, left))
+# bc_left = dirichletbc(0., locate_dofs_geometrical(V, left), V)
+bc_up = dirichletbc(0., locate_dofs_geometrical(V, up), V)
+bc_down = dirichletbc(0., locate_dofs_geometrical(V, down), V)
+
+bcs = [bc_left, bc_up, bc_down]
 
 u = Function(V, name="Solution")
 
-# solve(a == l, u, bc)
-
-A = fem.petsc.assemble_matrix(a, bcs=[bc])
+A = fem.petsc.assemble_matrix(a, bcs=bcs)
 A.assemble()
 # A.view()
 b = fem.petsc.assemble_vector(l)
+fem.petsc.apply_lifting(b, [a], bcs=[bcs])
+b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 # b.view()
-fem.petsc.set_bc(b, [bc])
+fem.petsc.set_bc(b, bcs)
 
 # A = PETScMatrix()
 # assemble(a, tensor=A)
@@ -188,7 +204,6 @@ fem.petsc.set_bc(b, [bc])
 print(A.type)
 # A.view()
 # b = b.vec()
-x = b.duplicate()
 
 def set_pcbnn(ksp, A, b, x):
     pcbnn = PCAWG(A)
@@ -223,7 +238,7 @@ pc.setType(None)
 
 # A = 0.5*(A + A.transpose())
 
-set_pcbnn(ksp, A, b, x)
+set_pcbnn(ksp, A, b, u.vector)
 
 ksp.setType("cg")
 if computeRitz:
@@ -236,7 +251,7 @@ ksp.setFromOptions()
 #### END SETUP KSP
 
 ###### SOLVE:
-ksp.solve(b, x)
+ksp.solve(b, u.vector)
 
 if computeRitz:
     Ritz = ksp.computeEigenvalues()
@@ -250,28 +265,50 @@ convhistory = ksp.getConvergenceHistory()
 # if ksp.getInitialGuessNonzero() == False:
 #     x+=xtild
 
-Ax = x.duplicate()
-A.mult(x, Ax)
+# bc_left = dirichletbc(0., locate_dofs_geometrical(V, left), V)
+# bc_up = dirichletbc(0., locate_dofs_geometrical(V, up), V)
+# bc_down = dirichletbc(0., locate_dofs_geometrical(V, down), V)
+
+# bcs = [bc_left, bc_up, bc_down]
+# # fem.petsc.apply_lifting(b, [a], bcs=[bcs])
+# b = fem.petsc.assemble_vector(l)
+# b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+# fem.petsc.set_bc(b, bcs)
+# # b.view()
+
+Ax = b.duplicate()
+A.mult(u.vector, Ax)
+
+# fem.petsc.set_bc(Ax, bcs)
+
 # pcbnn.A.mult(x,Ax)
 tmp1 = (Ax - b).norm()
 tmp2 = b.norm()
 if mpi.COMM_WORLD.rank == 0:
-    print(f'norm of A x - b = {tmp1}, norm of b = {tmp2}')
+    print(f'norm of A x - b = {tmp1/tmp2}, norm of b = {tmp2}')
     print('convergence history', convhistory)
     if computeRitz:
         print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')
 
 # save_json(test_case, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
 
+def get_rank(x):
+    return mpi.COMM_WORLD.rank*np.ones(x.shape[1])
+
+rank_field = Function(V0, name='rank')
+rank_field.interpolate(get_rank)
 
 with XDMFFile(mpi.COMM_WORLD, "solution_2d.xdmf", "w") as ufile_xdmf:
     u.x.scatter_forward()
     ufile_xdmf.write_mesh(mesh)
     ufile_xdmf.write_function(u)
+    ufile_xdmf.write_function(rank_field)
 
-# plot(u)
-# import matplotlib.pyplot as plt
-# plt.show()
+
+# import pyvista
+# grid = pyvista.UnstructuredGrid(*plot.create_vtk_mesh(V))
+# grid.point_data["u"] = u.x.array
+# grid.plot(show_edges=True)
 #viewer = PETSc.Viewer().createVTK(f'solution_2d.vts', 'w', comm = PETSc.COMM_WORLD)
 #x.view(viewer)
 #print("coucou")
