@@ -114,8 +114,8 @@ Ly = OptDB.getInt('Ly', 1)
 n  = OptDB.getInt('n', 16)
 nx = OptDB.getInt('nx', Lx*n+1)
 ny = OptDB.getInt('ny', Ly*n+1)
-kappa1 = OptDB.getReal('kappa1', 10**12)
-kappa2 = OptDB.getReal('kappa2', 10**6)
+alpha1 = OptDB.getReal('alpha1', 10**12)
+alpha2 = OptDB.getReal('alpha2', 10**6)
 test_case = OptDB.getString('test_case', 'default')
 isPCNew = OptDB.getBool('PCNew', True)
 computeRitz  =  OptDB.getBool('computeRitz', True)
@@ -125,24 +125,79 @@ stripe_nb = OptDB.getInt('stripe_nb', 3)
 mesh = create_rectangle(mpi.COMM_WORLD, ((0., 0.), (Lx, Ly)), (nx, ny), CellType.triangle)
 # mesh = RectangleMesh.create([Point(0., 0.), Point(Lx, Ly)],[nx,ny],CellType.Type.quadrilateral)
 
+class coefConst:
+    def __init__(self, k):
+        self.k = k 
+
+    def eval(self, x):
+        return np.full(x.shape[1], self.k)
+
+class Expression_alpha:
+    def __init__(self, alphaconst = 1, channel=[], skyscraper = []): 
+        self.channel = channel 
+        # channel is a list of [alphac, s0, s1, e0, e1, w] i
+        # channel from (s0,s1) to (e0,e1) of width w 
+        self.alphaconst = alphaconst
+        self.skyscraper = skyscraper
+
+    def eval(self, x):
+        #constant component
+        alpha = self.alphaconst
+        #add channels 
+        for chann in self.channel:
+            [alphac, s0, s1, e0, e1, w] = chann 
+            slope = (e1 - s1) / (e0 - s0)
+            alpha += alphac*np.logical_and(np.logical_and(s0<=x[0],  x[0]<=e0), np.logical_and(slope*(x[0]-s0)+s1 <=x[1],  x[1]<= slope * (x[0]-e0)+e1+w   )) 
+        #add skyscraper 
+        for sky in self.skyscraper:
+            [alphas,modulo] = sky
+            dx1 = np.floor(9*x[0])
+            dx2 = np.floor(9*x[1])
+            alpha += alphas*(dx2+1) * np.logical_and(dx1 == np.floor(dx1/2)*2, dx2==np.floor(dx2/2)*2)
+        return np.full(x.shape[1], alpha)
 
 class MyExpression:
     def __init__(self, k1, k2):
-        self.kappa1 = k1
-        self.kappa2 = k2
+        self.alpha1 = k1
+        self.alpha2 = k2
 
     def eval(self, x):
         # Added some spatial variation here. Expression is sin(t)*x
         mask = np.logical_and(1./7<=x[1]-np.floor(x[1]),  x[1]-np.floor(x[1])<=2./7)
-        return np.full(x.shape[1], kappa2*mask + kappa1*np.logical_not(mask))
-
-
+        return np.full(x.shape[1], self.alpha2*mask + self.alpha1*np.logical_not(mask))
 
 V0 = FunctionSpace(mesh, ("DG", 0))
-kappa = Function(V0)
-fk = MyExpression(kappa1, kappa2)
-kappa.interpolate(fk.eval)
+alpha = Function(V0, name="alpha")
 
+##fk.show()
+#alphaconst = alpha2
+#channel1 = [alpha1,0.,1./7,Lx,1./7,1./7]
+#channel2 = [alpha1,0.,3./7,Lx,3./7,1./7]
+#channel= [channel1, channel2] 
+
+#test case from DtN paper: 
+alphaconst = 1.
+alphachannel = 10.**6
+channel1 = [alphachannel-alphaconst, 0.0, 0., 1, 1, 0.05];
+channel2 = [alphachannel-alphaconst, 0., 0.5, 0.5, 0, 0.05];
+channel3 = [alphachannel-alphaconst, 0.5, 0., 0.75, 1., 0.1];
+channel= [channel1, channel2, channel3] 
+
+skyscraper = [10.**5, 9]
+
+#Do the skyscraper then run loads of tests
+
+falpha = Expression_alpha(alphaconst,channel,[skyscraper]) 
+#falpha = Expression_alpha(alphaconst)
+#print('alpha is constant and equal to 1')
+
+#fchann2 = coefChannel(channel2) 
+#fk = MyExpression(alpha2, alpha1+alpha2)
+alpha.interpolate(falpha.eval)
+
+print(f'{alpha.vector.min()} <= alpha <= {alpha.vector.max()}') 
+
+#alpha = alpha 
 rho_g = 9.81
 # f = Constant(mesh, -rho_g)
 f = Constant(mesh, 1.)
@@ -155,7 +210,7 @@ v = ufl.TestFunction(V)
 # a = fem.form(ufl.lhs(F))
 # l = fem.form(ufl.rhs(F))
 
-a = fem.form(kappa*ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx)
+a = fem.form(alpha*ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx)
 l = fem.form(ufl.inner(f, v)*ufl.dx)
 
 def left(x):
@@ -216,14 +271,14 @@ def set_pcbnn(ksp, A, b, x):
 
 ksp = PETSc.KSP().create()
 ksp.setOperators(A)
-ksp.setOptionsPrefix("global_")
+ksp.setOptionsPrefix("global_ksp_")
 
 pc = ksp.pc
 pc.setType(None)
 
 # A = 0.5*(A + A.transpose())
 
-set_pcbnn(ksp, A, b, x)
+set_pcbnn(ksp, A, b, u.vector)
 
 ksp.setType("cg")
 if computeRitz:
@@ -236,7 +291,7 @@ ksp.setFromOptions()
 #### END SETUP KSP
 
 ###### SOLVE:
-ksp.solve(b, x)
+ksp.solve(b, u.vector)
 
 if computeRitz:
     Ritz = ksp.computeEigenvalues()
@@ -250,8 +305,8 @@ convhistory = ksp.getConvergenceHistory()
 # if ksp.getInitialGuessNonzero() == False:
 #     x+=xtild
 
-Ax = x.duplicate()
-A.mult(x, Ax)
+Ax = b.duplicate()
+A.mult(u.vector, Ax)
 # pcbnn.A.mult(x,Ax)
 tmp1 = (Ax - b).norm()
 tmp2 = b.norm()
@@ -262,14 +317,21 @@ if mpi.COMM_WORLD.rank == 0:
         print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')
 
 # save_json(test_case, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
+def get_rank(x):
+    return mpi.COMM_WORLD.rank*np.ones(x.shape[1])
+
+rank_field = Function(V0, name='rank')
+rank_field.interpolate(get_rank)
 
 
 with XDMFFile(mpi.COMM_WORLD, "solution_2d.xdmf", "w") as ufile_xdmf:
     u.x.scatter_forward()
     ufile_xdmf.write_mesh(mesh)
     ufile_xdmf.write_function(u)
+    ufile_xdmf.write_function(alpha)
+    ufile_xdmf.write_function(rank_field)
 
-# plot(u)
+#plot(u)
 # import matplotlib.pyplot as plt
 # plt.show()
 #viewer = PETSc.Viewer().createVTK(f'solution_2d.vts', 'w', comm = PETSc.COMM_WORLD)

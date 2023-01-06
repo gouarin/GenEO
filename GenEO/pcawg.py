@@ -41,7 +41,7 @@ class PCAWG:
         ksp.setOptionsPrefix("H_")
         pc = ksp.pc
         pc.setType('asm')
-        pc.setASMOverlap(2)
+        pc.setASMOverlap(1)
         pc.setASMType(PETSc.PC.ASMType.BASIC)   #0: none (block Jacobi); 1:restrict (non sym); 2: interpolate (non sym); 3: basic
         pc.setFromOptions()
         pc.setUp()
@@ -52,13 +52,55 @@ class PCAWG:
         localksp = pc.getASMSubKSP()[0]
 
         As = localksp.getOperators()[0]
-        global_sizes = A.getSizes()
+        global_sizes = A.getSizes() #returns ((m, M), (n, N)) (ie local and global info) 
         local_sizes = As.getSizes()
 
         works_1, works_2 = As.getVecs()
         work_1, work_2 = A.getVecs()
         scatter_l2g = PETSc.Scatter().create(works_1, None, work_1, isb[0])
 
+##begin test
+#        Bs = As.copy()
+#        works_3 = works_1.duplicate()
+#        works_3.set(0.)
+#        for i in range(global_sizes[0][1]):
+#            work_1.set(0.)
+#            work_1[i] = 1.
+#            work_1.assemble()
+#            scatter_l2g(work_1, works_1, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+##            A.mult(work_1, work_2) #work_2 = column of A correponding to global dof j
+#            As.mult(works_1, works_2) #works_2 = column of As correponding to global dof j
+#
+##            work_2.abs()
+##            sii_glob = work_2.sum() #the 1 norm of work2 
+#            works_2.abs()
+#            sii_loc = works_2.sum() #the 1 norm of works_2 
+#            work_2.set(0.)
+#            scatter_l2g(works_2, work_2, PETSc.InsertMode.ADD_VALUES)
+#            denom = work_2.sum() #the 1 norm of work_2 (all coefs are non negative) 
+#
+#            col = np.asarray(np.where(works_1[:] == 1)[0], dtype='int32')
+#            if col.size > 0:
+#                works_3[col[0]] = sii_loc/denom 
+#                #mask_B = As[:, col[0]] != 0
+#                #mask_works = works_1[:] != 0
+#                #mask = np.logical_and(mask_B, mask_works)
+#                #indices = np.asarray(range(local_sizes[0][0]), dtype='int32')
+#                #Bs.setValues(indices[mask], col[0], As[:, col[0]][mask]**2/works_1[:][mask], PETSc.InsertMode.INSERT_VALUES)
+#                #diff = sii_glob - sii_loc
+#                #Bs.setValues(col[0], col[0], As[col[0], col[0]] - (sii_glob - sii_loc), PETSc.InsertMode.INSERT_VALUES)
+#        works_3.assemble()
+#        work_2.set(0.)
+#        scatter_l2g(works_3, work_2, PETSc.InsertMode.ADD_VALUES)
+#        print(f'sum of all works_3.min()= {work_2.min()} and sumof_works_3.max()= {work_2.max()}') 
+#        #print('begin works_3')
+#        print(f'works_3.min()= {works_3.min()} and works_3.max()= {works_3.max()}') 
+#        #print('end works_3')
+#        Bs.diagonalScale(L=works_3)
+#        Bs = 0.5*(Bs + Bs.transpose()) 
+##end test
+
+#Bs is multiplicity based (as in the AWG article)
         Bs = As.duplicate()
         for i in range(global_sizes[0][1]):
             work_1.set(0.)

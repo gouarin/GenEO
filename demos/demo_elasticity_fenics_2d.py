@@ -4,9 +4,16 @@
 #
 # License: BSD 3 clause
 # from __future__ import print_function, division
-from fenics import *
 import sys, petsc4py
 petsc4py.init(sys.argv)
+
+from dolfinx import plot
+from dolfinx import fem
+from dolfinx.fem import Expression, Function, VectorFunctionSpace,FunctionSpace, dirichletbc, Constant, locate_dofs_geometrical
+from dolfinx.io import XDMFFile
+from dolfinx.mesh import CellType, create_rectangle
+import ufl
+
 import mpi4py.MPI as mpi
 from petsc4py import PETSc
 import numpy as np
@@ -117,62 +124,56 @@ computeRitz  =  OptDB.getBool('computeRitz', True)
 stripe_nb = OptDB.getInt('stripe_nb', 3)
 
 # Create mesh and define function space
-mesh = RectangleMesh(Point(0., 0.), Point(Lx, Ly), nx, ny, "crossed")
-# mesh = RectangleMesh.create([Point(0., 0.), Point(Lx, Ly)],[nx,ny],CellType.Type.quadrilateral)
+mesh = create_rectangle(mpi.COMM_WORLD, ((0., 0.), (Lx, Ly)), (nx, ny), CellType.triangle)
 
-exp = "(1./7<=x[1]-floor(x[1])) && (x[1]-floor(x[1])<=2./7)"
-nuk = Expression(f"{exp}? nu2 : nu1", degree=0, nu1=nu1, nu2=nu2)
-Ek = Expression(f"{exp} ? E2 : E1", degree=0, E1=E1, E2=E2)
+class expr:
+    def __init__(self, v1, v2):
+        self.v1 = v1
+        self.v2 = v2
 
-V0 = FunctionSpace(mesh, "DG", 0)
-nu = interpolate(nuk, V0)
-E = interpolate(Ek, V0)
+    def eval(self, x):
+        mask = np.logical_and(1./7<=x[1]-np.floor(x[1]),  x[1]-np.floor(x[1])<=2./7)
+        return np.full(x.shape[1], self.v2*mask + self.v1*np.logical_not(mask))
+
+V0 = FunctionSpace(mesh, ("DG", 0))
+nu = Function(V0)
+f_nuk = expr(nu1, nu2)
+nu.interpolate(f_nuk.eval)
+E = Function(V0)
+f_Ek = expr(E1, E2)
+E.interpolate(f_Ek.eval)
 
 lambda_ = (nu*E)/((1+nu)*(1-2*nu))
 mu = .5*E/(1+nu)
 
 rho_g = 9.81
-f = Constant((0, -rho_g))
+f = Constant(mesh, (0, -rho_g))
 
-V = VectorFunctionSpace(mesh, 'Lagrange', degree=1)
+V = VectorFunctionSpace(mesh, ('Lagrange', 1))
 
 def eps(v):
-    return sym(grad(v))
+    return ufl.sym(ufl.grad(v))
 
 def sigma(v):
-    return lambda_*tr(eps(v))*Identity(2) + 2.0*mu*eps(v)
+    return lambda_*ufl.tr(eps(v))*ufl.Identity(len(v)) + 2.0*mu*eps(v)
 
+du = ufl.TrialFunction(V)
+u_ = ufl.TestFunction(V)
 
-du = TrialFunction(V)
-u_ = TestFunction(V)
-a = inner(sigma(du), eps(u_))*dx
-l = inner(f, u_)*dx
+a = fem.form(ufl.inner(sigma(du), eps(u_))*ufl.dx)
+l = fem.form(ufl.inner(f, u_)*ufl.dx)
 
+def left(x):
+    return np.isclose(x[0], 0.)
 
-def left(x, on_boundary):
-    return near(x[0], 0.)
-
-bc = DirichletBC(V, Constant((0.,0.)), left)
+bc = dirichletbc(np.zeros(2), locate_dofs_geometrical(V, left), V)
 
 u = Function(V, name="Displacement")
 
-# solve(a == l, u, bc)
-
-A = PETScMatrix()
-assemble(a, tensor=A)
-b = PETScVector()
-assemble(l, tensor=b)
-bc.apply(b)
-
-A = A.mat()
-#
-bc_dof = bc.get_boundary_values()
-
-A.zeroRowsColumnsLocal(list(bc_dof.keys()))
-print(A.type)
-# A.view()
-b = b.vec()
-x = b.duplicate()
+A = fem.petsc.assemble_matrix(a, bcs=[bc])
+A.assemble()
+b = fem.petsc.assemble_vector(l)
+fem.petsc.set_bc(b, [bc])
 
 def set_pcbnn(ksp, A, b, x):
     pcbnn = PCAWG(A)
@@ -207,7 +208,7 @@ pc.setType(None)
 
 # A = 0.5*(A + A.transpose())
 
-set_pcbnn(ksp, A, b, x)
+set_pcbnn(ksp, A, b, u.vector)
 
 ksp.setType("cg")
 if computeRitz:
@@ -220,7 +221,7 @@ ksp.setFromOptions()
 #### END SETUP KSP
 
 ###### SOLVE:
-ksp.solve(b, x)
+ksp.solve(b, u.vector)
 
 if computeRitz:
     Ritz = ksp.computeEigenvalues()
@@ -234,8 +235,8 @@ convhistory = ksp.getConvergenceHistory()
 # if ksp.getInitialGuessNonzero() == False:
 #     x+=xtild
 
-Ax = x.duplicate()
-A.mult(x, Ax)
+Ax = b.duplicate()
+A.mult(u.vector, Ax)
 # pcbnn.A.mult(x,Ax)
 tmp1 = (Ax - b).norm()
 tmp2 = b.norm()
@@ -247,10 +248,18 @@ if mpi.COMM_WORLD.rank == 0:
 
 # save_json(test_case, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
 
-u.vector()[:] = x.array
-plot(1e3*u, mode="displacement")
-import matplotlib.pyplot as plt
-plt.show()
-# print("coucou")
-# viewer = PETSc.Viewer().createVTK(f'solution_2d.vts', 'w', comm = PETSc.COMM_WORLD)
-# x.view(viewer)
+def get_rank(x):
+    return mpi.COMM_WORLD.rank*np.ones(x.shape[1])
+
+rank_field = Function(V0, name='rank')
+rank_field.interpolate(get_rank)
+
+with XDMFFile(mpi.COMM_WORLD, "displacement_2d.xdmf", "w") as ufile_xdmf:
+    u.x.scatter_forward()
+    ufile_xdmf.write_mesh(mesh)
+    ufile_xdmf.write_function(u)
+    ufile_xdmf.write_function(rank_field)
+
+unorm = u.x.norm()
+if mpi.COMM_WORLD.rank == 0:
+    print("norm: ", unorm)

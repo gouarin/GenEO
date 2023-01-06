@@ -45,8 +45,10 @@ def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigm
         -PCBNN_kscaling False
         """))
 
-    print(f"mpiexec -np {nxdomains*nydomains} --oversubscribe python demo_AGenEO_2d.py -options_file options.txt")
-    result = subprocess.run(["mpiexec", "-np", f"{nxdomains*nydomains}", "--oversubscribe", "python", "./demo_AGenEO_2d.py", "-options_file", "options.txt"], capture_output=True)
+    #print(f"mpiexec -np {nxdomains*nydomains} --oversubscribe python demo_AGenEO_2d.py -options_file options.txt")
+    #result = subprocess.run(["mpiexec", "-np", f"{nxdomains*nydomains}", "--oversubscribe", "python", "./demo_AGenEO_2d.py", "-options_file", "options.txt"], capture_output=True)
+    print(f"mpiexec -np {nxdomains*nydomains} python demo_AGenEO_2d.py -options_file options.txt")
+    result = subprocess.run(["mpiexec", "-np", f"{nxdomains*nydomains}", "python", "./demo_AGenEO_2d.py", "-options_file", "options.txt"], capture_output=True)
     if result.stderr:
         with open(f"{path}/stderr_execution.txt", 'w') as f:
             f.write(result.stderr.decode('utf-8'))
@@ -55,7 +57,7 @@ def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigm
     # os.system(f"mpiexec -np {ndomains} --oversubscribe python ./demo_AGenEO_2d.py -options_file options.txt")
 
 
-case = 7
+case = 10
 
 if case == 1:
     nxdomains= [3]
@@ -157,7 +159,7 @@ elif case == 8: #options takes several values (see below)
     n = [21]#, 42]
     nu1 = [0.4]*len(E1)
     nu2 = [0.4]*len(E1)
-if case == 9:
+elif case == 9:
     nxdomains= [3]
     nydomains= [3]
     n = [21]#, 42]
@@ -169,6 +171,18 @@ if case == 9:
     stripe_nb = [2]
     nu1 = [0.4]*len(E1)
     nu2 = [0.4]*len(E1)
+elif case == 10:
+    nxdomains= [4]
+    nydomains= [1]*len(nxdomains)
+    Aposrtol = [1e-10]
+    E1 = [1e11]
+    E2 = [1e7]
+    neigs = 30
+    taueigmax = [0.1]
+    stripe_nb = [2] #4 will set E = E2
+    n = [14]#, 42]
+    nu1 = [0.3]*len(E1)
+    nu2 = [0.3]*len(E1)
 
 
 if case != 4:
