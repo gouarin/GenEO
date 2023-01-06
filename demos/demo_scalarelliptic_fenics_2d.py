@@ -320,8 +320,10 @@ if mpi.COMM_WORLD.rank == 0:
 def get_rank(x):
     return mpi.COMM_WORLD.rank*np.ones(x.shape[1])
 
-rank_field = Function(V0, name='rank')
+rank_field = Function(V, name='rank')
 rank_field.interpolate(get_rank)
+rank_field_P0 = Function(V0, name='rank_P0') #rank as a piecewise continuous function (for plotting subdomains)
+rank_field_P0.interpolate(get_rank)
 
 
 with XDMFFile(mpi.COMM_WORLD, "solution_2d.xdmf", "w") as ufile_xdmf:
@@ -330,6 +332,7 @@ with XDMFFile(mpi.COMM_WORLD, "solution_2d.xdmf", "w") as ufile_xdmf:
     ufile_xdmf.write_function(u)
     ufile_xdmf.write_function(alpha)
     ufile_xdmf.write_function(rank_field)
+    ufile_xdmf.write_function(rank_field_P0)
 
 #plot(u)
 # import matplotlib.pyplot as plt

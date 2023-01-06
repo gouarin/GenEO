@@ -36,18 +36,54 @@ class PCAWG:
 
         self.H2addCS = True #OptDB.getBool('PCNew_H2addCoarseSolve', True) (it is currently not an option to use a projected preconditioner for H2)
 
+        ksp0 = PETSc.KSP().create()
+        ksp0.setOperators(A)
+        pc0 = ksp0.pc
+        pc0.setType('asm')
+        pc0.setASMType(PETSc.PC.ASMType.BASIC)   #0: none (block Jacobi); 1:restrict (non sym); 2: interpolate (non sym); 3: basic
+        pc0.setASMOverlap(0)
+        pc0.setFromOptions()
+        pc0.setUp()
+        isb0, isl = pc0.getASMLocalSubdomains()
+
+
+        ksp1 = PETSc.KSP().create()
+        ksp1.setOperators(A)
+        pc1 = ksp1.pc
+        pc1.setType('asm')
+        pc1.setASMType(PETSc.PC.ASMType.BASIC)   #0: none (block Jacobi); 1:restrict (non sym); 2: interpolate (non sym); 3: basic
+        pc1.setASMOverlap(1)
+        pc1.setFromOptions()
+        pc1.setUp()
+        isb1, isl = pc1.getASMLocalSubdomains()
+        localksp1 = pc1.getASMSubKSP()[0]
+        As1 = localksp1.getOperators()[0]
+
+        work, _ = A.getVecs()
+        works, _ = As1.getVecs()
+        scatter_l2g1 = PETSc.Scatter().create(works, None, work, isb1[0])
+
+        work.array[:] = mpi.COMM_WORLD.rank
+        scatter_l2g1(work, works, PETSc.InsertMode.INSERT_VALUES, PETSc.ScatterMode.SCATTER_REVERSE)
+
+        lgmap = PETSc.LGMap().create(isb1[0])
+
+        newisbarray = isb1[0].array[mpi.COMM_WORLD.rank <= works.array[:]] 
+
+        isb = [PETSc.IS().createGeneral(newisbarray)]
+        #add ddls to overlap only if local rank < rank of owner of global ddl
+
         ksp = PETSc.KSP().create()
         ksp.setOperators(A)
         ksp.setOptionsPrefix("H_")
         pc = ksp.pc
         pc.setType('asm')
-        pc.setASMOverlap(1)
         pc.setASMType(PETSc.PC.ASMType.BASIC)   #0: none (block Jacobi); 1:restrict (non sym); 2: interpolate (non sym); 3: basic
+        pc.setASMLocalSubdomains(1,isb)
         pc.setFromOptions()
         pc.setUp()
 
-        isb, isl = pc.getASMLocalSubdomains()
-        lgmap = PETSc.LGMap().create(isb[0])
+
 
         localksp = pc.getASMSubKSP()[0]
 
