@@ -112,8 +112,8 @@ OptDB = PETSc.Options()
 Lx = OptDB.getInt('Lx', 4)
 Ly = OptDB.getInt('Ly', 1)
 n  = OptDB.getInt('n', 16)
-nx = OptDB.getInt('nx', Lx*n+1)
-ny = OptDB.getInt('ny', Ly*n+1)
+nx = OptDB.getInt('nx', Lx*n)
+ny = OptDB.getInt('ny', Ly*n)
 E1 = OptDB.getReal('E1', 10**12)
 E2 = OptDB.getReal('E2', 10**6)
 nu1 = OptDB.getReal('nu1', 0.4)
@@ -131,15 +131,38 @@ class expr:
         self.v1 = v1
         self.v2 = v2
 
-    def eval(self, x):
-        mask = np.logical_and(1./7<=x[1]-np.floor(x[1]),  x[1]-np.floor(x[1])<=2./7)
-        return np.full(x.shape[1], self.v2*mask + self.v1*np.logical_not(mask))
+    def eval(self, coords):
+        x, y = coords[0], coords[1]
+        if stripe_nb == 0:
+            if mpi.COMM_WORLD.rank == 0:
+                print(f'Test number {stripe_nb} - no stripes E = {E1}')
+            mask = False
+        elif stripe_nb == 1:
+            if mpi.COMM_WORLD.rank == 0:
+                print(f'Test number {stripe_nb} - one stripe')
+            mask = np.logical_and(1./7<=y-np.floor(y), y-np.floor(y)<=2./7)
+            #mask = np.logical_and(1./7<=y, y<=2./7)
+        elif stripe_nb == 2:
+            if mpi.COMM_WORLD.rank == 0:
+                print(f'Test number {stripe_nb} - two stripes')
+            #mask= np.logical_or(np.logical_and(1./7<=y, y<=2./7),np.logical_and(3./7<=y, y<=4./7))
+            mask= np.logical_or(np.logical_and(1./7<=y-np.floor(y), y-np.floor(y)<=2./7),np.logical_and(3./7<=y-np.floor(y), y-np.floor(y)<=4./7))
+        elif stripe_nb == 3:
+            if mpi.COMM_WORLD.rank == 0:
+                print(f'Test number {stripe_nb} - three stripes')
+            mask= np.logical_or(np.logical_or(np.logical_and(1./7<=y-np.floor(y), y-np.floor(y)<=2./7),np.logical_and(3./7<=y-np.floor(y), y-np.floor(y)<=4./7)), np.logical_and(5./7<=y-np.floor(y), y-np.floor(y)<=6./7))
+        else:
+            if mpi.COMM_WORLD.rank == 0:
+                print(f'Test number {stripe_nb} is not implemented, instead I set E={E2}')
+            mask = True
+
+        return np.full(coords.shape[1], self.v1*mask + self.v2*np.logical_not(mask))
 
 V0 = FunctionSpace(mesh, ("DG", 0))
-nu = Function(V0)
+nu = Function(V0, name='nu')
 f_nuk = expr(nu1, nu2)
 nu.interpolate(f_nuk.eval)
-E = Function(V0)
+E = Function(V0, name='E')
 f_Ek = expr(E1, E2)
 E.interpolate(f_Ek.eval)
 
@@ -197,6 +220,7 @@ def set_pcbnn(ksp, A, b, x):
     pc.setPythonContext(pcbnn)
     pc.setFromOptions()
 
+    return pcbnn
     #############SETUP KSP
 
 ksp = PETSc.KSP().create()
@@ -208,7 +232,7 @@ pc.setType(None)
 
 # A = 0.5*(A + A.transpose())
 
-set_pcbnn(ksp, A, b, u.vector)
+pcawg = set_pcbnn(ksp, A, b, u.vector)
 
 ksp.setType("cg")
 if computeRitz:
@@ -246,7 +270,7 @@ if mpi.COMM_WORLD.rank == 0:
     if computeRitz:
         print(f'Estimated kappa(H3 A) = {Ritzmax/Ritzmin}; with lambdamin = {Ritzmin} and lambdamax = {Ritzmax}')
 
-# save_json(test_case, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pcbnn, Ritz)
+save_json(test_case, E1, E2, nu1, nu2, Lx, Ly, stripe_nb, ksp, pcawg, Ritz)
 
 def get_rank(x):
     return mpi.COMM_WORLD.rank*np.ones(x.shape[1])
@@ -258,6 +282,8 @@ with XDMFFile(mpi.COMM_WORLD, "displacement_2d.xdmf", "w") as ufile_xdmf:
     u.x.scatter_forward()
     ufile_xdmf.write_mesh(mesh)
     ufile_xdmf.write_function(u)
+    ufile_xdmf.write_function(E)
+    ufile_xdmf.write_function(nu)
     ufile_xdmf.write_function(rank_field)
 
 unorm = u.x.norm()

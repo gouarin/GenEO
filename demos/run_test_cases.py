@@ -47,8 +47,10 @@ def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigm
 
     #print(f"mpiexec -np {nxdomains*nydomains} --oversubscribe python demo_AGenEO_2d.py -options_file options.txt")
     #result = subprocess.run(["mpiexec", "-np", f"{nxdomains*nydomains}", "--oversubscribe", "python", "./demo_AGenEO_2d.py", "-options_file", "options.txt"], capture_output=True)
-    print(f"mpiexec -np {nxdomains*nydomains} python demo_AGenEO_2d.py -options_file options.txt")
-    result = subprocess.run(["mpiexec", "-np", f"{nxdomains*nydomains}", "python", "./demo_AGenEO_2d.py", "-options_file", "options.txt"], capture_output=True)
+    # exec = "./demo_AGenEO_2d.py"
+    exec = "./demo_elasticity_fenics_2d.py"
+    print(f"mpiexec -np {nxdomains*nydomains} python {exec} -options_file options.txt")
+    result = subprocess.run(["mpiexec", "-np", f"{nxdomains*nydomains}", "python", exec, "-options_file", "options.txt"], capture_output=True)
     if result.stderr:
         with open(f"{path}/stderr_execution.txt", 'w') as f:
             f.write(result.stderr.decode('utf-8'))
@@ -57,7 +59,7 @@ def run_simu(path, nxdomains, nydomains, n, E1, E2, nu1, nu2, stripe_nb, taueigm
     # os.system(f"mpiexec -np {ndomains} --oversubscribe python ./demo_AGenEO_2d.py -options_file options.txt")
 
 
-case = 10
+case = 6
 
 if case == 1:
     nxdomains= [3]
@@ -130,7 +132,7 @@ elif case == 6:
     E2 = [1e7]
     neigs = 30
     taueigmax = [0.1]
-    #stripe_nb = [0, 1, 2, 3, 4] #4 will set E = E2
+    stripe_nb = [0, 1, 2, 3, 4] #4 will set E = E2
     n = [21]#, 42]
     nu1 = [0.3]*len(E1)
     nu2 = [0.3]*len(E1)
@@ -187,7 +189,7 @@ elif case == 10:
 
 if case != 4:
     PCNew_options = [('pcnew', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),
-                    ('pcbnn', "-PCNew False \n-PCBNN_switchtoASM False \n-PCBNN_CoarseProjection True"),
+                      #('pcbnn', "-PCNew False \n-PCBNN_switchtoASM False \n-PCBNN_CoarseProjection True"),
     ]
 else:
     PCNew_options = [#('pcnew_NNhyb_ad', "-PCNew True \n-PCNew_switchtoASM False \n-PCNew_switchtoASMpos False \n-PCNew_H2CoarseProjection True \n-PCNew_H3CoarseProjection False"),

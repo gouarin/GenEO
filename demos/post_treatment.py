@@ -195,8 +195,8 @@ for (dirpath, dirnames, filenames) in os.walk(path):
                     'sum_gathered_nneg': int(results['sum_gathered_nneg']),
             }
             dfs.append(data_case4)
-        plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
-        plot_solution(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+        # plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+        # plot_solution(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
 
         # plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
 
@@ -271,21 +271,21 @@ for (dirpath, dirnames, filenames) in os.walk(path):
 #####END CASE 5 and 8
         # ax.plot(results['precresiduals'])
 ######CASE 6
-#        res_case_6 = regexp_case_6.search(os.path.split(dirpath)[-1])
-#        if res_case_6:
-#            name = open(os.path.join(dirpath, 'name.txt')).read()
-#            data = {' ': name,
-#                    'nbstripes': results['stripe_nb'],
-#                    'kappa': results['kappa'][0],
-#                    'iter': len(results['precresiduals']),
-#                    'lambdamin': results['lambdamin'][0],
-#                    'lambdamax': results['lambdamax'][0],
-#                    'V0dim': int(results['V0dim']),
-#                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
-#            }
-#            dfs.append(data)
-#            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
-#            plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
+        res_case_6 = regexp_case_6.search(os.path.split(dirpath)[-1])
+        if res_case_6:
+            name = open(os.path.join(dirpath, 'name.txt')).read()
+            data = {' ': name,
+                    'nbstripes': results['stripe_nb'],
+                    'kappa': results['kappa'][0],
+                    'iter': len(results['precresiduals']),
+                    'lambdamin': results['lambdamin'][0],
+                    'lambdamax': results['lambdamax'][0],
+                    'V0dim': int(results['V0dim']),
+                    'sum_gathered_nneg': int(results['sum_gathered_nneg']),
+            }
+            dfs.append(data)
+            #plot_coarse_vec(dirpath, data, results['E1'], results['E2'], results['stripe_nb'],results['Ly'])
+            # plot_eigenvalues(dirpath, results['GenEOV0_gathered_Lambdasharp'])
 #######END CASE 6
 #####CASE 7
         res_case_7 = regexp_case_7.search(os.path.split(dirpath)[-1])
